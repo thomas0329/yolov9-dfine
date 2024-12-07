@@ -709,8 +709,12 @@ class ClassificationModel(BaseModel):
         # Create a YOLO classification model from a *.yaml file
         self.model = None
 
-
+# the function to modify!
 def parse_model(d, ch):  # model_dict, input_channels(3)
+
+    # returns DetectionModel.model
+    # yolohead: models.yolo.DualDDetect
+
     # Parse a YOLO model.yaml dictionary
     LOGGER.info(f"\n{'':>3}{'from':>18}{'n':>3}{'params':>10}  {'module':<40}{'arguments':<30}")
     anchors, nc, gd, gw, act = d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple'], d.get('activation')
@@ -723,6 +727,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
     for i, (f, n, m, args) in enumerate(d['backbone'] + d['head']):  # from, number, module, args
+        # m: module
         m = eval(m) if isinstance(m, str) else m  # eval strings
         for j, a in enumerate(args):
             with contextlib.suppress(NameError):
@@ -779,7 +784,45 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         if i == 0:
             ch = []
         ch.append(c2)
-    return nn.Sequential(*layers), sorted(save)
+    
+
+    # layers.insert(-1, new_element)
+    os.chdir("D_FINE")
+    print("Current Working Directory:", os.getcwd())
+    dfine()
+
+    return nn.Sequential(*layers), sorted(save) # numbered
+
+from D_FINE.src.misc import dist_utils
+from D_FINE.src.core import yaml_utils
+from D_FINE.src.core import YAMLConfig
+from argparse import Namespace
+
+def dfine() -> None:
+    """main
+    """
+
+    args = Namespace(config='configs/dfine/dfine_hgnetv2_l_coco.yml', resume=None, tuning=None, device=None, seed=0, use_amp=True, output_dir=None, summary_dir=None, test_only=False, update=None, print_method='builtin', print_rank=0, local_rank=None)
+
+    dist_utils.setup_distributed(args.print_rank, args.print_method, seed=args.seed)
+
+    assert not all([args.tuning, args.resume]), \
+        'Only support from_scrach or resume or tuning at one time'
+
+
+    update_dict = yaml_utils.parse_cli(args.update)
+    update_dict.update({k: v for k, v in args.__dict__.items() \
+        if k not in ['update', ] and v is not None})
+
+    cfg = YAMLConfig(args.config, **update_dict)
+
+    if args.resume or args.tuning:
+        if 'HGNetv2' in cfg.yaml_cfg:
+            cfg.yaml_cfg['HGNetv2']['pretrained'] = False
+
+    print('cfg: ', cfg.__dict__)
+    print('cfg.model', cfg.model)    # DFINE
+
 
 
 if __name__ == '__main__':
