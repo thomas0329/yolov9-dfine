@@ -3,4 +3,4 @@
 	url = ./D-FINE/
 [submodule "D_FINE"]
 	path = D_FINE
-	url = ./D_FINE/
+	url = ./D_FINE
