@@ -25,6 +25,8 @@ try:
 except ImportError:
     thop = None
 
+from D_FINE.src.zoo.dfine.dfine_decoder import DFINETransformer
+
 
 class Detect(nn.Module):
     # YOLO Detect head for detection models
@@ -602,7 +604,8 @@ class DetectionModel(BaseModel):
         self.inplace = self.yaml.get('inplace', True)
 
         # Build strides, anchors
-        m = self.model[-1]  # Detect()
+        m = self.model[-1]  # Detect(), now becomes DFINETransformer
+
         if isinstance(m, (Detect, DDetect, Segment, DSegment, Panoptic)):
             s = 256  # 2x min stride
             m.inplace = self.inplace
@@ -612,10 +615,13 @@ class DetectionModel(BaseModel):
             # m.anchors /= m.stride.view(-1, 1, 1)
             self.stride = m.stride
             m.bias_init()  # only run once
-        if isinstance(m, (DualDetect, TripleDetect, DualDDetect, TripleDDetect, DualDSegment)):
+        
+        # CHECK THIS
+        if isinstance(m, (DualDetect, TripleDetect, DualDDetect, TripleDDetect, DualDSegment, DFINETransformer)):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             forward = lambda x: self.forward(x)[0][0] if isinstance(m, (DualDSegment)) else self.forward(x)[0]
+            
             m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
             # check_anchor_order(m)
             # m.anchors /= m.stride.view(-1, 1, 1)
@@ -785,17 +791,23 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             ch = []
         ch.append(c2)
     
-
-    # layers.insert(-1, new_element)
     os.chdir("D_FINE")
     print("Current Working Directory:", os.getcwd())
-    dfine()
+
+    DFdec = dfine()
+    DFdec.pre_bbox_head = layers[-1]    # DualDDetect
+    layers.pop()
+    layers.append(DFdec)
+
+    os.chdir("../")
+    print("Current Working Directory:", os.getcwd())
 
     return nn.Sequential(*layers), sorted(save) # numbered
 
 from D_FINE.src.misc import dist_utils
 from D_FINE.src.core import yaml_utils
 from D_FINE.src.core import YAMLConfig
+from D_FINE.src.solver import TASKS
 from argparse import Namespace
 
 def dfine() -> None:
@@ -803,7 +815,7 @@ def dfine() -> None:
     """
 
     args = Namespace(config='configs/dfine/dfine_hgnetv2_l_coco.yml', resume=None, tuning=None, device=None, seed=0, use_amp=True, output_dir=None, summary_dir=None, test_only=False, update=None, print_method='builtin', print_rank=0, local_rank=None)
-
+    
     dist_utils.setup_distributed(args.print_rank, args.print_method, seed=args.seed)
 
     assert not all([args.tuning, args.resume]), \
@@ -820,8 +832,34 @@ def dfine() -> None:
         if 'HGNetv2' in cfg.yaml_cfg:
             cfg.yaml_cfg['HGNetv2']['pretrained'] = False
 
-    print('cfg: ', cfg.__dict__)
-    print('cfg.model', cfg.model)    # DFINE
+    return cfg.model.decoder
+
+    # print('cfg.model', cfg.model)
+
+    # for name, layer in cfg.model():
+    #     print(f"{name}: {type(layer).__name__}")
+
+    # model: DFINE
+        # backbone: HGNetv2      -> yolo
+        # encoder: HybridEncoder -> yolo
+
+        # decoder: DFINETransformer
+            #     input_proj: ModuleList
+            #     decoder: TransformerDecoder
+            #     denoising_class_embed: Embedding
+            #     query_pos_head: MLP   
+            #     enc_output: Sequential
+            #     enc_score_head: Linear    
+            #     enc_bbox_head: MLP    
+            #     dec_score_head: ModuleList    
+            #     pre_bbox_head: MLP    # trad head!
+            #     dec_bbox_head: ModuleList 
+            #     integral: Integral
+        
+        
+    
+     
+     
 
 
 

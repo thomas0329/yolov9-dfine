@@ -119,6 +119,50 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
     amp = check_amp(model)  # check AMP
 
+    # print('print yolo model')
+    # for name, layer in model.model.named_children():
+    #     print(f"{name}: {type(layer).__name__}")
+
+    # 0: Silence
+    # 1: Conv
+    # 2: Conv
+    # 3: RepNCSPELAN4
+    # 4: ADown
+    # 5: RepNCSPELAN4
+    # 6: ADown
+    # 7: RepNCSPELAN4
+    # 8: ADown
+    # 9: RepNCSPELAN4
+    # 10: SPPELAN
+    # 11: Upsample
+    # 12: Concat
+    # 13: RepNCSPELAN4
+    # 14: Upsample
+    # 15: Concat
+    # 16: RepNCSPELAN4
+    # 17: ADown
+    # 18: Concat
+    # 19: RepNCSPELAN4
+    # 20: ADown
+    # 21: Concat
+    # 22: RepNCSPELAN4
+    # 23: CBLinear
+    # 24: CBLinear
+    # 25: CBLinear
+    # 26: Conv
+    # 27: Conv
+    # 28: RepNCSPELAN4
+    # 29: ADown
+    # 30: CBFuse
+    # 31: RepNCSPELAN4
+    # 32: ADown
+    # 33: CBFuse
+    # 34: RepNCSPELAN4
+    # 35: ADown
+    # 36: CBFuse
+    # 37: RepNCSPELAN4
+    # 38: DualDDetect
+
     # Freeze
     freeze = [f'model.{x}.' for x in (freeze if len(freeze) > 1 else range(freeze[0]))]  # layers to freeze
     for k, v in model.named_parameters():
