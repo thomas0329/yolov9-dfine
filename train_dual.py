@@ -117,51 +117,13 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info(f'Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
     else:   # here
         model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        model.DFdec.training = True
     amp = check_amp(model)  # check AMP
 
     # print('print yolo model')
     # for name, layer in model.model.named_children():
     #     print(f"{name}: {type(layer).__name__}")
 
-    # 0: Silence
-    # 1: Conv
-    # 2: Conv
-    # 3: RepNCSPELAN4
-    # 4: ADown
-    # 5: RepNCSPELAN4
-    # 6: ADown
-    # 7: RepNCSPELAN4
-    # 8: ADown
-    # 9: RepNCSPELAN4
-    # 10: SPPELAN
-    # 11: Upsample
-    # 12: Concat
-    # 13: RepNCSPELAN4
-    # 14: Upsample
-    # 15: Concat
-    # 16: RepNCSPELAN4
-    # 17: ADown
-    # 18: Concat
-    # 19: RepNCSPELAN4
-    # 20: ADown
-    # 21: Concat
-    # 22: RepNCSPELAN4
-    # 23: CBLinear
-    # 24: CBLinear
-    # 25: CBLinear
-    # 26: Conv
-    # 27: Conv
-    # 28: RepNCSPELAN4
-    # 29: ADown
-    # 30: CBFuse
-    # 31: RepNCSPELAN4
-    # 32: ADown
-    # 33: CBFuse
-    # 34: RepNCSPELAN4
-    # 35: ADown
-    # 36: CBFuse
-    # 37: RepNCSPELAN4
-    # 38: DualDDetect
 
     # Freeze
     freeze = [f'model.{x}.' for x in (freeze if len(freeze) > 1 else range(freeze[0]))]  # layers to freeze
@@ -356,7 +318,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
             # Forward
             with torch.cuda.amp.autocast(amp):
-                pred = model(imgs)  # forward
+                pred = model(imgs, targets)  # forward
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
