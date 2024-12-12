@@ -186,7 +186,7 @@ def run(
             im /= 255  # 0 - 255 to 0.0 - 1.0
             nb, _, height, width = im.shape  # batch size, channels, height, width
 
-        # Inference
+        # Inference: only pred is used, train_out is discarded?
         with dt[1]:
             preds, train_out = model(im) if compute_loss else (model(im, augment=augment), None)
 
@@ -196,7 +196,7 @@ def run(
             #train_out = train_out[1]
             #loss += compute_loss(train_out, targets)[1]  # box, obj, cls
         else:
-            preds = preds[0][1]
+            preds = preds[0][1] # check this!
 
         # NMS
         targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels

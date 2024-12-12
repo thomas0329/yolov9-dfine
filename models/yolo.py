@@ -156,13 +156,23 @@ class DualDetect(nn.Module):
         self.dfl = DFL(self.reg_max)
         self.dfl2 = DFL(self.reg_max)
 
-    def forward(self, x):
+    def forward(self, x):   # returns bounding box during inf
+        # x0 shape torch.Size([16, 512, 80, 80])
+        # x1 shape torch.Size([16, 512, 40, 40])
+        # x2 shape torch.Size([16, 512, 20, 20])
+        # x3 shape torch.Size([16, 256, 80, 80])
+        # x4 shape torch.Size([16, 512, 40, 40])
+        # x5 shape torch.Size([16, 512, 20, 20])
+
+        # are we using both lead head and aux head during training?
+
         shape = x[0].shape  # BCHW
+
         d1 = []
         d2 = []
-        for i in range(self.nl):
-            d1.append(torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1))
-            d2.append(torch.cat((self.cv4[i](x[self.nl+i]), self.cv5[i](x[self.nl+i])), 1))
+        for i in range(self.nl):    # 3
+            d1.append(torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)) # x0, 1, 2
+            d2.append(torch.cat((self.cv4[i](x[self.nl+i]), self.cv5[i](x[self.nl+i])), 1)) # x3, 4, 5
         if self.training:
             return [d1, d2]
         elif self.dynamic or self.shape != shape:
@@ -189,7 +199,7 @@ class DualDetect(nn.Module):
             b[-1].bias.data[:m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (5 objects and 80 classes per 640 image)
 
 
-class DualDDetect(nn.Module):
+class DualDDetect(nn.Module):   # seems to have auxiliary head
     # YOLO Detect head for detection models
     dynamic = False  # force grid reconstruction
     export = False  # export mode
@@ -198,6 +208,8 @@ class DualDDetect(nn.Module):
     strides = torch.empty(0)  # init
 
     def __init__(self, nc=80, ch=(), inplace=True):  # detection layer
+        # dual detect constructor ch [512, 512, 512, 256, 512, 512], now [512, 512, 512]
+        # ch: channels of the input feat maps!
         super().__init__()
         self.nc = nc  # number of classes
         self.nl = len(ch) // 2  # number of detection layers
@@ -220,12 +232,21 @@ class DualDDetect(nn.Module):
         self.dfl2 = DFL(self.reg_max)
 
     def forward(self, x):
+
+        # x0 shape torch.Size([16, 512, 80, 80])
+        # x1 shape torch.Size([16, 512, 40, 40])
+        # x2 shape torch.Size([16, 512, 20, 20])
+
+        # x3 shape torch.Size([16, 256, 80, 80])
+        # x4 shape torch.Size([16, 512, 40, 40])
+        # x5 shape torch.Size([16, 512, 20, 20])
+
         shape = x[0].shape  # BCHW
         d1 = []
         d2 = []
-        for i in range(self.nl):
-            d1.append(torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1))
-            d2.append(torch.cat((self.cv4[i](x[self.nl+i]), self.cv5[i](x[self.nl+i])), 1))
+        for i in range(self.nl):    # 3
+            d1.append(torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)) # x0, x1, x2    # error
+            d2.append(torch.cat((self.cv4[i](x[self.nl+i]), self.cv5[i](x[self.nl+i])), 1)) # x3, x4, x5
         if self.training:
             return [d1, d2]
         elif self.dynamic or self.shape != shape:
@@ -624,7 +645,7 @@ class DetectionModel(BaseModel):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             forward = lambda x: self.forward(x)[0][0] if isinstance(m, (DualDSegment)) else self.forward(x)[0]
-            
+            # forward of the whole model
             m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
             # check_anchor_order(m)
             # m.anchors /= m.stride.view(-1, 1, 1)
@@ -783,6 +804,11 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         else:
             c2 = ch[f]
 
+        # 3 feat maps. why?
+        # how is ch determined?
+        # f: [31, 34, 37, 16, 19, 22]
+        # args: ch = [512, 512, 512, 256, 512, 512]
+
         m_ = nn.Sequential(*(m(*args) for _ in range(n))) if n > 1 else m(*args)  # module
         t = str(m)[8:-2].replace('__main__.', '')  # module type
         np = sum(x.numel() for x in m_.parameters())  # number params
@@ -798,7 +824,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
     print("Current Working Directory:", os.getcwd())
 
     DFdec = dfine()
-    DFdec.f = -1
+    DFdec.f = [16, 19, 22]  # check this
     DFdec.pre_bbox_head = layers[-1]    # DualDDetect
 
     layers.pop()
