@@ -234,16 +234,11 @@ class DualDDetect(nn.Module):
         self.dfl = DFL(self.reg_max)
         self.dfl2 = DFL(self.reg_max)
 
-    def forward(self, x):
-        # print('input shape', x.shape)    # [1, 300, 512]
-        x = x.transpose(1, 2)  # [1, 512, 300]
-        x = x.unsqueeze(-1)  # [1, 512, 300, 1]
-        # only one input x0!
-        
-        # expects 6 or 3 inputs! 
-        # x0 shape torch.Size([1, 512, 32, 32])
-        # x1 shape torch.Size([1, 512, 16, 16])
-        # x2 shape torch.Size([1, 512, 8, 8])
+    def forward(self, x):   # [1, 300, 512]
+        x = x.transpose(1, 2)   # [1, 512, 300]
+        x = torch.split(x, 100, dim=2)
+        x = [xi.reshape(1, 512, 10, 10) for xi in x]
+        # x[i] has shape [1, 512, 10, 10]
 
         # inputs to consider
         # x3 shape torch.Size([1, 256, 32, 32])
