@@ -48,10 +48,18 @@ class Conv(nn.Module):
         super().__init__()
         self.conv = nn.Conv2d(c1, c2, k, s, autopad(k, p, d), groups=g, dilation=d, bias=False)
         self.bn = nn.BatchNorm2d(c2)
+        # in python torch.Size([128, 300, 1])
+        # input dim is 3
         self.act = self.default_act if act is True else act if isinstance(act, nn.Module) else nn.Identity()
 
     def forward(self, x):
-        return self.act(self.bn(self.conv(x)))  # conv2d input error
+        # x should be like [1, 3, 256, 256]. now it's [300, 512]. what does each of them represent?
+        # 512: out_features of a linear layer. does out_feat mean the same as out_channels of a conv layer? 
+        print('shape of input to batchnorm', self.conv(x).shape)
+        x = self.conv(x)
+        if x.dim() < 4:
+            x = x.unsqueeze(0)
+        return self.act(self.bn(x))  # conv2d input error
 
     def forward_fuse(self, x):
         return self.act(self.conv(x))
