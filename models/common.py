@@ -55,7 +55,7 @@ class Conv(nn.Module):
     def forward(self, x):
         # x should be like [1, 3, 256, 256]. now it's [300, 512]. what does each of them represent?
         # 512: out_features of a linear layer. does out_feat mean the same as out_channels of a conv layer? 
-        print('shape of input to batchnorm', self.conv(x).shape)
+        # print('shape of input to batchnorm', self.conv(x).shape)
         x = self.conv(x)
         if x.dim() < 4:
             x = x.unsqueeze(0)

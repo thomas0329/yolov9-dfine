@@ -188,6 +188,7 @@ def run(
 
         # Inference: only pred is used, train_out is discarded?
         with dt[1]:
+            # (y, [d1, d2])
             preds, train_out = model(im) if compute_loss else (model(im, augment=augment), None)
 
         # Loss

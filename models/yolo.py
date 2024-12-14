@@ -211,11 +211,10 @@ class DualDDetect(nn.Module):
         # dual detect constructor ch [512, 512, 512, 256, 512, 512], now [256, 512, 512]
         # ch: channels of the input feat maps!
         super().__init__()
-        ch = [512]  # my modification
+        ch = [512, 512]  # my modification
 
         self.nc = nc  # number of classes
         self.nl = len(ch) // 2  # number of detection layers
-        # self.nl = 1 # my modification
         self.reg_max = 16
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
@@ -224,36 +223,50 @@ class DualDDetect(nn.Module):
         c2, c3 = make_divisible(max((ch[0] // 4, self.reg_max * 4, 16)), 4), max((ch[0], min((self.nc * 2, 128))))  # channels
         c4, c5 = make_divisible(max((ch[self.nl] // 4, self.reg_max * 4, 16)), 4), max((ch[self.nl], min((self.nc * 2, 128))))  # channels
         self.cv2 = nn.ModuleList(
-            nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3, g=4), nn.Conv2d(c2, 4 * self.reg_max, 1, groups=4)) for x in ch[:self.nl])
+            # nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3, g=4), nn.Conv2d(c2, 4 * self.reg_max, 1, groups=4)) for x in ch[:self.nl])
+            nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3, g=4), nn.Conv2d(c2, 2, 1)) for x in ch[:self.nl])
         self.cv3 = nn.ModuleList(
-            nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch[:self.nl])
+            # nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch[:self.nl])
+            nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, 2, 1)) for x in ch[:self.nl])
+        print('cv2', self.cv2)
+        print('cv3', self.cv3)
         self.cv4 = nn.ModuleList(
-            nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3, g=4), nn.Conv2d(c4, 4 * self.reg_max, 1, groups=4)) for x in ch[self.nl:])
+            # nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3, g=4), nn.Conv2d(c4, 4 * self.reg_max, 1, groups=4)) for x in ch[self.nl:])
+            nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3, g=4), nn.Conv2d(c4, 2, 1)) for x in ch[self.nl:])
         self.cv5 = nn.ModuleList(
-            nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, self.nc, 1)) for x in ch[self.nl:])
+            # nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, self.nc, 1)) for x in ch[self.nl:])
+            nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, 2, 1)) for x in ch[self.nl:])
         self.dfl = DFL(self.reg_max)
         self.dfl2 = DFL(self.reg_max)
 
     def forward(self, x):   # [1, 300, 512]
         x = x.transpose(1, 2)   # [1, 512, 300]
-        x = torch.split(x, 100, dim=2)
-        x = [xi.reshape(1, 512, 10, 10) for xi in x]
-        # x[i] has shape [1, 512, 10, 10]
+        x = torch.split(x, 150, dim=2)
+        x = [xi.reshape(1, 512, 15, 10) for xi in x]
 
-        # inputs to consider
-        # x3 shape torch.Size([1, 256, 32, 32])
-        # x4 shape torch.Size([1, 512, 16, 16])
-        # x5 shape torch.Size([1, 512, 8, 8])
+        # x[0] [1, 512, 15, 10]
+        # x[1] [1, 512, 15, 10]
 
         shape = x[0].shape  # BCHW
         # print('dualddetect input shape', shape) # [300, 512]
         d1 = []
         d2 = []
-        for i in range(self.nl):    # 3
-            d1.append(torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)) # x0, x1, x2 processed by cv2, cv3
-            d2.append(torch.cat((self.cv4[i](x[self.nl+i]), self.cv5[i](x[self.nl+i])), 1)) # x3, x4, x5 processed by cv4, cv5
-        if self.training:
-            return [d1, d2]
+        for i in range(self.nl):    # 1
+            print('self.cv2[i](x[i])', self.cv2[i](x[i]).shape)
+            print('self.cv3[i](x[i]))', self.cv3[i](x[i]).shape)
+            d1.append(torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)) # x0 processed by cv2, cv3
+            d2.append(torch.cat((self.cv4[i](x[self.nl+i]), self.cv5[i](x[self.nl+i])), 1)) # x1 processed by cv4, cv5
+            print('d1[0] shape', d1[0].shape)   # [1, 4, 15, 10]
+            d1[0] = d1[0].reshape(-1, 4, 150)
+            d2[0] = d2[0].reshape(-1, 4, 150)
+            print('d1[0]', d1[0].shape) # [1, 4, 150]
+            print('d2[0]', d2[0].shape) # [36, 4, 150]
+            d = torch.cat((d1[0], d2[0]), -1)
+            d = d.permute(0, 2, 1)
+            # print('d shape', d.shape)   # [1, 300, 144]
+        if self.training:   # here
+            # return [d1, d2]. dfine wants [1, 300, 4]
+            return d
         elif self.dynamic or self.shape != shape:
             self.anchors, self.strides = (d1.transpose(0, 1) for d1 in make_anchors(d1, self.stride, 0.5))
             self.shape = shape
@@ -809,8 +822,6 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         else:
             c2 = ch[f]
 
-        # 3 feat maps. why?
-        # how is ch determined?
         # f: [31, 34, 37, 16, 19, 22]
         # args: ch = [512, 512, 512, 256, 512, 512]
 
