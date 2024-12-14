@@ -199,7 +199,7 @@ class DualDetect(nn.Module):
             b[-1].bias.data[:m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (5 objects and 80 classes per 640 image)
 
 
-class DualDDetect(nn.Module):
+class DualDDetect(nn.Module):   # outputs class info
     # YOLO Detect head for detection models
     dynamic = False  # force grid reconstruction
     export = False  # export mode
@@ -228,8 +228,6 @@ class DualDDetect(nn.Module):
         self.cv3 = nn.ModuleList(
             # nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch[:self.nl])
             nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, 2, 1)) for x in ch[:self.nl])
-        print('cv2', self.cv2)
-        print('cv3', self.cv3)
         self.cv4 = nn.ModuleList(
             # nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3, g=4), nn.Conv2d(c4, 4 * self.reg_max, 1, groups=4)) for x in ch[self.nl:])
             nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3, g=4), nn.Conv2d(c4, 2, 1)) for x in ch[self.nl:])
@@ -252,15 +250,15 @@ class DualDDetect(nn.Module):
         d1 = []
         d2 = []
         for i in range(self.nl):    # 1
-            print('self.cv2[i](x[i])', self.cv2[i](x[i]).shape)
-            print('self.cv3[i](x[i]))', self.cv3[i](x[i]).shape)
+            # print('self.cv2[i](x[i])', self.cv2[i](x[i]).shape)
+            # print('self.cv3[i](x[i]))', self.cv3[i](x[i]).shape)
             d1.append(torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)) # x0 processed by cv2, cv3
             d2.append(torch.cat((self.cv4[i](x[self.nl+i]), self.cv5[i](x[self.nl+i])), 1)) # x1 processed by cv4, cv5
-            print('d1[0] shape', d1[0].shape)   # [1, 4, 15, 10]
+            # print('d1[0] shape', d1[0].shape)   # [1, 4, 15, 10]
             d1[0] = d1[0].reshape(-1, 4, 150)
             d2[0] = d2[0].reshape(-1, 4, 150)
-            print('d1[0]', d1[0].shape) # [1, 4, 150]
-            print('d2[0]', d2[0].shape) # [36, 4, 150]
+            # print('d1[0]', d1[0].shape) # [1, 4, 150]
+            # print('d2[0]', d2[0].shape) # [36, 4, 150]
             d = torch.cat((d1[0], d2[0]), -1)
             d = d.permute(0, 2, 1)
             # print('d shape', d.shape)   # [1, 300, 144]
@@ -658,13 +656,14 @@ class DetectionModel(BaseModel):
             self.stride = m.stride
             m.bias_init()  # only run once
         
-        # CHECK THIS
         if isinstance(m, (DualDetect, TripleDetect, DualDDetect, TripleDDetect, DualDSegment, DFINETransformer)):
             s = 256  # 2x min stride
             m.inplace = self.inplace
-            forward = lambda x: self.forward(x)[0][0] if isinstance(m, (DualDSegment)) else self.forward(x)[0]
-            # forward of the whole model
-            m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
+            # forward = lambda x: self.forward(x)[0][0] if isinstance(m, (DualDSegment)) else self.forward(x)[0]
+            # in yolo, forward returns d1: 3 feat maps. what's the "feat map" part in dfine output?
+            forward = lambda x: self.forward(x)
+            
+            m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # err
             # check_anchor_order(m)
             # m.anchors /= m.stride.view(-1, 1, 1)
             self.stride = m.stride
