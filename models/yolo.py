@@ -208,71 +208,80 @@ class DualDDetect(nn.Module):   # outputs class info
     strides = torch.empty(0)  # init
 
     def __init__(self, nc=80, ch=(), inplace=True):  # detection layer
-        # dual detect constructor ch [512, 512, 512, 256, 512, 512], now [256, 512, 512]
+        # dual detect constructor ch [512, 512, 512, 256, 512, 512]
         # ch: channels of the input feat maps!
+
+        # input [1, 300, 512]
         super().__init__()
-        ch = [512, 512]  # my modification
+        ch = [512]  # my modification
 
         self.nc = nc  # number of classes
-        self.nl = len(ch) // 2  # number of detection layers
+        self.nl = 1  # number of detection layers
+        # self.nl = len(ch) // 2  # number of detection layers
         self.reg_max = 16
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
         self.stride = torch.zeros(self.nl)  # strides computed during build
 
         c2, c3 = make_divisible(max((ch[0] // 4, self.reg_max * 4, 16)), 4), max((ch[0], min((self.nc * 2, 128))))  # channels
-        c4, c5 = make_divisible(max((ch[self.nl] // 4, self.reg_max * 4, 16)), 4), max((ch[self.nl], min((self.nc * 2, 128))))  # channels
+        # c4, c5 = make_divisible(max((ch[self.nl] // 4, self.reg_max * 4, 16)), 4), max((ch[self.nl], min((self.nc * 2, 128))))  # channels
+        c4, c5 = make_divisible(max((ch[0] // 4, self.reg_max * 4, 16)), 4), max((ch[0], min((self.nc * 2, 128))))  # channels
         self.cv2 = nn.ModuleList(
-            # nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3, g=4), nn.Conv2d(c2, 4 * self.reg_max, 1, groups=4)) for x in ch[:self.nl])
-            nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3, g=4), nn.Conv2d(c2, 2, 1)) for x in ch[:self.nl])
+            nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3, g=4), nn.Conv2d(c2, 4 * self.reg_max, 1, groups=4)) for x in ch[:self.nl])
+            # nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3, g=4), nn.Conv2d(c2, 2, 1)) for x in ch[:self.nl])
         self.cv3 = nn.ModuleList(
-            # nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch[:self.nl])
-            nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, 2, 1)) for x in ch[:self.nl])
+            nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch[:self.nl])
+            # nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, 2, 1)) for x in ch[:self.nl])
         self.cv4 = nn.ModuleList(
-            # nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3, g=4), nn.Conv2d(c4, 4 * self.reg_max, 1, groups=4)) for x in ch[self.nl:])
-            nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3, g=4), nn.Conv2d(c4, 2, 1)) for x in ch[self.nl:])
+            nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3, g=4), nn.Conv2d(c4, 4 * self.reg_max, 1, groups=4)) for x in ch[:self.nl])
+            # nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3, g=4), nn.Conv2d(c4, 2, 1)) for x in ch[self.nl:])
         self.cv5 = nn.ModuleList(
-            # nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, self.nc, 1)) for x in ch[self.nl:])
-            nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, 2, 1)) for x in ch[self.nl:])
+            nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, self.nc, 1)) for x in ch[:self.nl])
+            # nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, 2, 1)) for x in ch[self.nl:])
         self.dfl = DFL(self.reg_max)
         self.dfl2 = DFL(self.reg_max)
 
-    def forward(self, x):   # [1, 300, 512]
+    def forward(self, x, aux):   # [1, 300, 512]
+        
         x = x.transpose(1, 2)   # [1, 512, 300]
-        x = torch.split(x, 150, dim=2)
-        x = [xi.reshape(1, 512, 15, 10) for xi in x]
+        
+        x = x.reshape(-1, 512, 15, 20)  # # [1, 512, 15, 20]
+        shape = x.shape  # BCHW
+        
+        d = []
 
-        # x[0] [1, 512, 15, 10]
-        # x[1] [1, 512, 15, 10]
+        # CV5 has nothing
+        if aux: # Expected 4D (batched) input to conv2d, but got input of size: [512, 300]
+            d.append(torch.cat((self.cv2[0](x), self.cv3[0](x)), 1))
+        else:
+            d.append(torch.cat((self.cv4[0](x), self.cv5[0](x)), 1))
 
-        shape = x[0].shape  # BCHW
-        # print('dualddetect input shape', shape) # [300, 512]
-        d1 = []
-        d2 = []
-        for i in range(self.nl):    # 1
-            # print('self.cv2[i](x[i])', self.cv2[i](x[i]).shape)
-            # print('self.cv3[i](x[i]))', self.cv3[i](x[i]).shape)
-            d1.append(torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)) # x0 processed by cv2, cv3
-            d2.append(torch.cat((self.cv4[i](x[self.nl+i]), self.cv5[i](x[self.nl+i])), 1)) # x1 processed by cv4, cv5
-            # print('d1[0] shape', d1[0].shape)   # [1, 4, 15, 10]
-            d1[0] = d1[0].reshape(-1, 4, 150)
-            d2[0] = d2[0].reshape(-1, 4, 150)
-            # print('d1[0]', d1[0].shape) # [1, 4, 150]
-            # print('d2[0]', d2[0].shape) # [36, 4, 150]
-            d = torch.cat((d1[0], d2[0]), -1)
-            d = d.permute(0, 2, 1)
-            # print('d shape', d.shape)   # [1, 300, 144]
-        if self.training:   # here
-            # return [d1, d2]. dfine wants [1, 300, 4]
-            return d
-        elif self.dynamic or self.shape != shape:
-            self.anchors, self.strides = (d1.transpose(0, 1) for d1 in make_anchors(d1, self.stride, 0.5))
+        # for i in range(self.nl):    # 3
+        #     d1.append(torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)) # x0, 1, 2 processed by cv2, cv3
+        #     d2.append(torch.cat((self.cv4[i](x[self.nl+i]), self.cv5[i](x[self.nl+i])), 1)) # x3, 4, 5 processed by cv4, cv5
+        
+        #     d1[0] = d1[0].reshape(-1, 4, 150)
+        #     d2[0] = d2[0].reshape(-1, 4, 150)
+
+        #     d = torch.cat((d1[0], d2[0]), -1)
+        #     d = d.permute(0, 2, 1)
+        
+        # now I'm returning all outputs
+        if self.dynamic or self.shape != shape:
+            self.anchors, self.strides = (d1.transpose(0, 1) for d1 in make_anchors(d, self.stride, 0.5))
             self.shape = shape
 
-        box, cls = torch.cat([di.view(shape[0], self.no, -1) for di in d1], 2).split((self.reg_max * 4, self.nc), 1)
+        box, cls = torch.cat([di.view(shape[0], self.no, -1) for di in d], 2).split((self.reg_max * 4, self.nc), 1)
         dbox = dist2bbox(self.dfl(box), self.anchors.unsqueeze(0), xywh=True, dim=1) * self.strides
-        box2, cls2 = torch.cat([di.view(shape[0], self.no, -1) for di in d2], 2).split((self.reg_max * 4, self.nc), 1)
-        dbox2 = dist2bbox(self.dfl2(box2), self.anchors.unsqueeze(0), xywh=True, dim=1) * self.strides
+        # box2, cls2 = torch.cat([di.view(shape[0], self.no, -1) for di in d2], 2).split((self.reg_max * 4, self.nc), 1)
+        # dbox2 = dist2bbox(self.dfl2(box2), self.anchors.unsqueeze(0), xywh=True, dim=1) * self.strides
+        dbox = dbox.permute(0, 2, 1)
+        if self.training:   # here
+            # return [d1, d2]
+            print('dualddetect out shape', dbox.shape)  # dualddetect out shape torch.Size([1, 300, 4]), correct!
+            print('done!!!!')
+            return dbox   # [1, 300, 4]
+        
         y = [torch.cat((dbox, cls.sigmoid()), 1), torch.cat((dbox2, cls2.sigmoid()), 1)]
         return y if self.export else (y, [d1, d2])
         #y = torch.cat((dbox2, cls2.sigmoid()), 1)
