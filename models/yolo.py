@@ -839,8 +839,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
     print("Current Working Directory:", os.getcwd())
 
     DFdec = dfine()
-    DFdec.f = [16, 19, 22]  # check this
-    DFdec.pre_bbox_head = layers[-1]    # DualDDetect is generated together w detectionmodel
+    DFdec.f = [31, 34, 37, 16, 19, 22]  # check this
+    DFdec.pre_bbox_head = layers[-1]    # DualDDetect
 
     layers.pop()
     layers.append(DFdec)
