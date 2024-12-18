@@ -244,17 +244,17 @@ class DualDDetect(nn.Module):   # outputs class info
     def forward(self, x, aux):   # [1, 300, 512]
         
         x = x.transpose(1, 2)   # [1, 512, 300]
-        
         x = x.reshape(-1, 512, 15, 20)  # # [1, 512, 15, 20]
         shape = x.shape  # BCHW
         
         d = []
 
-        # CV5 has nothing
         if aux: # Expected 4D (batched) input to conv2d, but got input of size: [512, 300]
             d.append(torch.cat((self.cv2[0](x), self.cv3[0](x)), 1))
         else:
             d.append(torch.cat((self.cv4[0](x), self.cv5[0](x)), 1))
+
+        # print('d0 shape', d[0].shape)   # d0 shape torch.Size([1, 144, 15, 20])
 
         # for i in range(self.nl):    # 3
         #     d1.append(torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)) # x0, 1, 2 processed by cv2, cv3
@@ -278,9 +278,7 @@ class DualDDetect(nn.Module):   # outputs class info
         dbox = dbox.permute(0, 2, 1)
         if self.training:   # here
             # return [d1, d2]
-            print('dualddetect out shape', dbox.shape)  # dualddetect out shape torch.Size([1, 300, 4]), correct!
-            print('done!!!!')
-            return dbox   # [1, 300, 4]
+            return dbox, d   # [1, 300, 4]
         
         y = [torch.cat((dbox, cls.sigmoid()), 1), torch.cat((dbox2, cls2.sigmoid()), 1)]
         return y if self.export else (y, [d1, d2])
@@ -671,12 +669,15 @@ class DetectionModel(BaseModel):
             # forward = lambda x: self.forward(x)[0][0] if isinstance(m, (DualDSegment)) else self.forward(x)[0]
             # in yolo, forward returns d1: 3 feat maps. what's the "feat map" part in dfine output?
             forward = lambda x: self.forward(x)
-            
-            m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # err
+            # return _, dual_out
+            # dual_out = aux_d, main_d = d1, d2
+            # d1[0]: [1, 144, 15, 20]
+            m.stride = torch.tensor([s / x[0].shape[-2] for x in forward(torch.zeros(1, ch, s, s))[-1]])  # err
+            # print('m stride', m.stride) # [17.06667, 17.06667]
             # check_anchor_order(m)
             # m.anchors /= m.stride.view(-1, 1, 1)
             self.stride = m.stride
-            m.bias_init()  # only run once
+            # m.bias_init()  # only run once
 
         # Init weights, biases
         initialize_weights(self)
