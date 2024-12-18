@@ -117,7 +117,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info(f'Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
     else:   # here
         model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-        model.DFdec.training = True
+        print('printing direct children of the model')
+        for name, _ in model.model.named_children():
+            print(name)
+        model.model[38].training = True   # dfine module
     amp = check_amp(model)  # check AMP
 
     # print('print yolo model')
@@ -240,7 +243,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         model = smart_DDP(model)
 
     # Model attributes
-    nl = de_parallel(model).model[-1].nl  # number of detection layers (to scale hyps)
+    # nl = de_parallel(model).model[-1].nl
+    nl = de_parallel(model).model[-1].num_layers  # number of detection layers (to scale hyps)
     #hyp['box'] *= 3 / nl  # scale to layers
     #hyp['cls'] *= nc / 80 * 3 / nl  # scale to classes and layers
     #hyp['obj'] *= (imgsz / 640) ** 2 * 3 / nl  # scale to image size and layers
@@ -318,7 +322,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
             # Forward
             with torch.cuda.amp.autocast(amp):
-                # model output: out, dual_out
+                # model output: out, dual_out: 
                 _, pred = model(imgs, targets)  # pred: d1, d2
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:

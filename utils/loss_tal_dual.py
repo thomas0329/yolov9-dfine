@@ -120,13 +120,13 @@ class ComputeLoss:
         if g > 0:
             BCEcls = FocalLoss(BCEcls, g)
 
-        m = de_parallel(model).model[-1]  # Detect() module
-        self.balance = {3: [4.0, 1.0, 0.4]}.get(m.nl, [4.0, 1.0, 0.25, 0.06, 0.02])  # P3-P7
+        m = de_parallel(model).model[-1]  # Detect() module, now DFINETransformer
+        self.balance = {3: [4.0, 1.0, 0.4]}.get(m.num_layers, [4.0, 1.0, 0.25, 0.06, 0.02])  # P3-P7
         self.BCEcls = BCEcls
         self.hyp = h
         self.stride = m.stride  # model strides
-        self.nc = m.nc  # number of classes
-        self.nl = m.nl  # number of layers
+        self.nc = m.num_classes  # number of classes
+        self.nl = m.num_layers  # number of layers
         self.no = m.no
         self.reg_max = m.reg_max
         self.device = device
