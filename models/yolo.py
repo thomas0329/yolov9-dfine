@@ -241,15 +241,16 @@ class DualDDetect(nn.Module):   # outputs class info
         self.dfl = DFL(self.reg_max)
         self.dfl2 = DFL(self.reg_max)
 
-    def forward(self, x, aux):   # [1, 300, 512]
-        
+    def forward(self, x, aux):   # [1, 300, 512] or [1, ? ,512] (w denoising)
+        # print('dualddetect input shape', x.shape)
         x = x.transpose(1, 2)   # [1, 512, 300]
-        x = x.reshape(-1, 512, 15, 20)  # # [1, 512, 15, 20]
+        bs = x.shape[0]
+        x = x.reshape(bs, 512, -1, 1)
         shape = x.shape  # BCHW
         
         d = []
 
-        if aux: # Expected 4D (batched) input to conv2d, but got input of size: [512, 300]
+        if aux: # aux output is not used, so aux network is not updated! what about the 
             d.append(torch.cat((self.cv2[0](x), self.cv3[0](x)), 1))
         else:
             d.append(torch.cat((self.cv4[0](x), self.cv5[0](x)), 1))
@@ -570,6 +571,7 @@ class BaseModel(nn.Module):
         return self._forward_once(x, profile, visualize)  # single-scale inference, train
 
     def _forward_once(self, x, targets, profile=False, visualize=False):
+        # targets is for DFINETransformer only!
         y, dt = [], []  # outputs
         for m in self.model:
             if m.f != -1:  # if not from previous layer
@@ -848,7 +850,9 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
     os.chdir("D_FINE")
     print("Current Working Directory:", os.getcwd())
 
-    DFdec = dfine()
+    # cfg.model.decoder, cfg.train_dataloader
+    DF = dfine()
+    DFdec = DF.model.decoder
     DFdec.f = [31, 34, 37, 16, 19, 22]  # check this
     DFdec.pre_bbox_head = layers[-1]    # DualDDetect
 
@@ -881,14 +885,29 @@ def dfine() -> None:
     update_dict = yaml_utils.parse_cli(args.update)
     update_dict.update({k: v for k, v in args.__dict__.items() \
         if k not in ['update', ] and v is not None})
-
+    
+    # args.config   # configs/dfine/dfine_hgnetv2_l_coco.yml
     cfg = YAMLConfig(args.config, **update_dict)
 
     if args.resume or args.tuning:
         if 'HGNetv2' in cfg.yaml_cfg:
             cfg.yaml_cfg['HGNetv2']['pretrained'] = False
 
-    return cfg.model.decoder
+    # print('cfg: ', cfg.__dict__)
+    # print('cfg train load', cfg.train_dataloader)   # usable
+
+    # solver = TASKS[cfg.yaml_cfg['task']](cfg)
+
+    # if args.test_only:
+    #     solver.val()
+    # else:
+    #     solver.fit()
+
+    # dist_utils.cleanup()
+
+    # return cfg.model.decoder, solver
+    # return cfg.model.decoder, cfg.train_dataloader
+    return cfg
 
     # print('cfg.model', cfg.model)
 

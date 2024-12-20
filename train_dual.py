@@ -1,3 +1,4 @@
+# branch: used dfine loss, some of the model parameters are not updated
 import argparse
 import math
 import os
@@ -15,6 +16,9 @@ import torch.nn as nn
 import yaml
 from torch.optim import lr_scheduler
 from tqdm import tqdm
+from models.yolo import dfine
+from D_FINE.src.solver.det_engine import train_one_epoch
+from D_FINE.src.misc import dist_utils
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLO root directory
@@ -52,6 +56,7 @@ GIT_INFO = None#check_git_info()
 
 
 def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary
+    
     # cfg: model dict
     save_dir, epochs, batch_size, weights, single_cls, evolve, data, cfg, resume, noval, nosave, workers, freeze = \
         Path(opt.save_dir), opt.epochs, opt.batch_size, opt.weights, opt.single_cls, opt.evolve, opt.data, opt.cfg, \
@@ -117,9 +122,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info(f'Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
     else:   # here
         model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-        print('printing direct children of the model')
-        for name, _ in model.model.named_children():
-            print(name)
         model.model[38].training = True   # dfine module
     amp = check_amp(model)  # check AMP
 
@@ -150,8 +152,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     nbs = 64  # nominal batch size
     accumulate = max(round(nbs / batch_size), 1)  # accumulate loss before optimizing
     hyp['weight_decay'] *= batch_size * accumulate / nbs  # scale weight_decay
-    optimizer = smart_optimizer(model, opt.optimizer, hyp['lr0'], hyp['momentum'], hyp['weight_decay'])
-
+    # optimizer = smart_optimizer(model, opt.optimizer, hyp['lr0'], hyp['momentum'], hyp['weight_decay'])
+    optimizer = torch.optim.SGD(model.parameters()) # test
+    
     # Scheduler
     if opt.cos_lr:
         lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1->hyp['lrf']
@@ -195,7 +198,16 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info('Using SyncBatchNorm()')
 
     # Trainloader
-    train_loader, dataset = create_dataloader(train_path,
+
+    os.chdir("D_FINE")
+    print("Current Working Directory:", os.getcwd())
+
+    DF = dfine()
+
+    os.chdir("../")
+    print("Current Working Directory:", os.getcwd())
+    
+    train_loader, dataset, shared_sampler = create_dataloader(train_path,   # sampler: DistributedSampler
                                               imgsz,
                                               batch_size // WORLD_SIZE,
                                               gs,
@@ -217,8 +229,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     assert mlc < nc, f'Label class {mlc} exceeds nc={nc} in {data}. Possible class labels are 0-{nc - 1}'
 
     # Process 0
+    
     if RANK in {-1, 0}:
-        val_loader = create_dataloader(val_path,
+        val_loader = create_dataloader(val_path,    # sampler: None
                                        imgsz,
                                        batch_size // WORLD_SIZE * 2,
                                        gs,
@@ -296,11 +309,31 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         if RANK in {-1, 0}:
             pbar = tqdm(pbar, total=nb, bar_format=TQDM_BAR_FORMAT)  # progress bar
         optimizer.zero_grad()
+
+        DFtrain_dataloader = dist_utils.warp_loader( # deal w DDP
+            DF.train_dataloader, shuffle=DF.train_dataloader.shuffle
+        )
+        
+        train_stats = train_one_epoch(
+                model,
+                DF.criterion,
+                DFtrain_dataloader,    # should be passed ditributed sampler
+                optimizer,
+                device,
+                epoch,
+                max_norm=DF.clip_max_norm,
+                print_freq=DF.print_freq,
+                ema=ema,
+                scaler=DF.scaler,
+                lr_warmup_scheduler=DF.lr_warmup_scheduler,
+                writer=DF.writer
+        )
+
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             callbacks.run('on_train_batch_start')
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
-
+            print('yolo images', imgs.shape)
             # Warmup
             if ni <= nw:
                 xi = [0, nw]  # x interp
@@ -321,11 +354,16 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     imgs = nn.functional.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
             # Forward
+            print('forward called')
             with torch.cuda.amp.autocast(amp):
-                # model output: out, dual_out: 
+                # model output: out, dual_out
+                # dual_out = d1, d2
+                # no need to pass targets to model for yolo
+                # process targets for dfine
+                # yolo an dfine have different targets
                 _, pred = model(imgs, targets)  # pred: d1, d2
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
-                if RANK != -1:
+                if RANK != -1:  # err
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
                 if opt.quad:
                     loss *= 4.

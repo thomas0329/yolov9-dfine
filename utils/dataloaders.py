@@ -136,6 +136,7 @@ def create_dataloader(path,
     nd = torch.cuda.device_count()  # number of CUDA devices
     nw = min([os.cpu_count() // max(nd, 1), batch_size if batch_size > 1 else 0, workers])  # number of workers
     sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
+    print('yolo dset sampler', sampler)
     #loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
     loader = DataLoader if image_weights or close_mosaic else InfiniteDataLoader
     generator = torch.Generator()
@@ -148,7 +149,7 @@ def create_dataloader(path,
                   pin_memory=PIN_MEMORY,
                   collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn,
                   worker_init_fn=seed_worker,
-                  generator=generator), dataset
+                  generator=generator), dataset, sampler
 
 
 class InfiniteDataLoader(dataloader.DataLoader):
@@ -427,7 +428,7 @@ def img2label_paths(img_paths):
     return [sb.join(x.rsplit(sa, 1)).rsplit('.', 1)[0] + '.txt' for x in img_paths]
 
 
-class LoadImagesAndLabels(Dataset):
+class LoadImagesAndLabels(torchvision.datasets.CocoDetection, Dataset):
     # YOLOv5 train_loader/val_loader, loads images and labels for training and validation
     cache_version = 0.6  # dataset labels *.cache version
     rand_interp_methods = [cv2.INTER_NEAREST, cv2.INTER_LINEAR, cv2.INTER_CUBIC, cv2.INTER_AREA, cv2.INTER_LANCZOS4]
@@ -646,6 +647,26 @@ class LoadImagesAndLabels(Dataset):
     #     #self.shuffled_vector = np.random.permutation(self.nF) if self.augment else np.arange(self.nF)
     #     return self
 
+    def load_item_df(self, idx):
+        image, target = super(LoadImagesAndLabels, self).__getitem__(idx)
+        image_id = self.ids[idx]
+        target = {'image_id': image_id, 'annotations': target}
+
+        if self.remap_mscoco_category:
+            image, target = self.prepare(image, target, category2label=mscoco_category2label)
+        else:
+            image, target = self.prepare(image, target)
+
+        target['idx'] = torch.tensor([idx])
+
+        if 'boxes' in target:
+            target['boxes'] = convert_to_tv_tensor(target['boxes'], key='boxes', spatial_size=image.size[::-1])
+
+        if 'masks' in target:
+            target['masks'] = convert_to_tv_tensor(target['masks'], key='masks')
+
+        return image, target
+
     def __getitem__(self, index):
         index = self.indices[index]  # linear, shuffled, or image_weights
 
@@ -719,6 +740,7 @@ class LoadImagesAndLabels(Dataset):
         img = np.ascontiguousarray(img)
 
         return torch.from_numpy(img), labels_out, self.im_files[index], shapes
+        # imgs, targets, paths, _
 
     def load_image(self, i):
         # Loads 1 image from dataset index 'i', returns (im, original hw, resized hw)
