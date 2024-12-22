@@ -197,7 +197,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         DF.train_dataloader, shuffle=DF.train_dataloader.shuffle
     )
     # DFlr_scheduler = DF.lr_scheduler    # should depend on opt
-    
+    DFscalar = DF.scaler
+    print('df scalar', DFscalar)
     DFlr_scheduler = MultiStepLR(optimizer=optimizer, milestones=[500], gamma=0.1)
     DFlr_warmup_scheduler = LinearWarmup(lr_scheduler=DFlr_scheduler, warmup_duration=500)      # depends on lr_scheduler
     
@@ -317,7 +318,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 max_norm=DF.clip_max_norm,
                 print_freq=DF.print_freq,
                 ema=DFema,    
-                scaler=DF.scaler,
+                # scaler=DF.scaler, # disable amp
                 lr_warmup_scheduler=DFlr_warmup_scheduler,
                 writer=DF.writer
         )

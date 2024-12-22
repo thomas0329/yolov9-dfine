@@ -105,7 +105,7 @@ class DDetect(nn.Module):   # this
 
     def forward(self, x):
 
-        # print('ddetect input', x.shape) # torch.Size([b, 300, 512])
+        # print('ddetect input', x) # torch.Size([b, 300, 512])
         x = x.transpose(1, 2)   # [b, 512, 300]
         bs = x.shape[0]
         x = x.reshape(bs, 512, -1, 1)   # [b, 512, 300, 1]
@@ -115,7 +115,7 @@ class DDetect(nn.Module):   # this
             # print('1', self.cv2[i](x[i]).shape)   # 1 torch.Size([1, 64, 300, 1])
             # print('2', self.cv3[i](x[i]).shape)   # 2 torch.Size([1, 80, 300, 1])
             d.append(torch.cat((self.cv2[i](x), self.cv3[i](x)), 1))
-        print('d', d)
+        # print('d', d)
         # pred_distri, pred_scores = torch.cat([xi.view(d[0].shape[0], self.no, -1) for xi in d], 2).split(
         #     (self.reg_max * 4, self.nc), 1)
         # pred_scores = pred_scores.permute(0, 2, 1).contiguous()
@@ -151,7 +151,7 @@ class DDetect(nn.Module):   # this
             # return x
             # dbox [1, 4, 300]
             dbox = dbox.permute(0, 2, 1)    # [1, 300, 4]
-            print('dbox', dbox)   # THERE IS value NOW
+            # print('dbox', dbox)   # THERE IS value NOW
 
             return dbox, d
 
