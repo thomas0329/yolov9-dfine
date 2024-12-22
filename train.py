@@ -15,6 +15,11 @@ import torch.nn as nn
 import yaml
 from torch.optim import lr_scheduler
 from tqdm import tqdm
+from models.yolo import dfine
+from D_FINE.src.solver.det_engine import train_one_epoch
+from D_FINE.src.misc import dist_utils
+from torch.optim.lr_scheduler import MultiStepLR
+from D_FINE.src.optim import LinearWarmup
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # root directory
@@ -39,8 +44,9 @@ from utils.loggers.comet.comet_utils import check_comet_resume
 from utils.loss_tal import ComputeLoss
 from utils.metrics import fitness
 from utils.plots import plot_evolve
-from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_device, smart_DDP,
+from utils.torch_utils import (EarlyStopping, de_parallel, select_device, smart_DDP,
                                smart_optimizer, smart_resume, torch_distributed_zero_first)
+from D_FINE.src.optim.ema import ModelEMA
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -154,7 +160,15 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     # from utils.plots import plot_lr_scheduler; plot_lr_scheduler(optimizer, scheduler, epochs)
 
     # EMA
-    ema = ModelEMA(model) if RANK in {-1, 0} else None
+    # ema = ModelEMA(model) if RANK in {-1, 0} else None
+    DFema = ModelEMA(model=model, decay=0.9999, warmups=1000, start=0)
+
+    # DF ema
+    # ema:
+    #     type: ModelEMA
+    #     decay: 0.9999
+    #     warmups: 1000
+    #     start: 0
 
     # Resume
     best_fitness, start_epoch = 0.0, 0
@@ -174,6 +188,24 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info('Using SyncBatchNorm()')
 
     # Trainloader
+
+    os.chdir("D_FINE")
+    print("Current Working Directory:", os.getcwd())
+
+    DF = dfine()
+    DFtrain_dataloader = dist_utils.warp_loader( # deal w DDP
+        DF.train_dataloader, shuffle=DF.train_dataloader.shuffle
+    )
+    # DFlr_scheduler = DF.lr_scheduler    # should depend on opt
+    
+    DFlr_scheduler = MultiStepLR(optimizer=optimizer, milestones=[500], gamma=0.1)
+    DFlr_warmup_scheduler = LinearWarmup(lr_scheduler=DFlr_scheduler, warmup_duration=500)      # depends on lr_scheduler
+    
+    os.chdir("../")
+    print("Current Working Directory:", os.getcwd())
+
+    
+
     train_loader, dataset = create_dataloader(train_path,
                                               imgsz,
                                               batch_size // WORLD_SIZE,
@@ -222,7 +254,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         model = smart_DDP(model)
 
     # Model attributes
-    nl = de_parallel(model).model[-1].nl  # number of detection layers (to scale hyps)
+    nl = de_parallel(model).model[-1].num_layers  # number of detection layers (to scale hyps)
     #hyp['box'] *= 3 / nl  # scale to layers
     #hyp['cls'] *= nc / 80 * 3 / nl  # scale to classes and layers
     #hyp['obj'] *= (imgsz / 640) ** 2 * 3 / nl  # scale to image size and layers
@@ -274,6 +306,25 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         if RANK in {-1, 0}:
             pbar = tqdm(pbar, total=nb, bar_format=TQDM_BAR_FORMAT)  # progress bar
         optimizer.zero_grad()
+
+        train_stats = train_one_epoch(
+                model,
+                DF.criterion,
+                DFtrain_dataloader,
+                optimizer,  # yolo opt for now
+                device,
+                epoch,
+                max_norm=DF.clip_max_norm,
+                print_freq=DF.print_freq,
+                ema=DFema,    
+                scaler=DF.scaler,
+                lr_warmup_scheduler=DFlr_warmup_scheduler,
+                writer=DF.writer
+        )
+
+        if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
+                DFlr_scheduler.step()
+
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             callbacks.run('on_train_batch_start')
             ni = i + nb * epoch  # number integrated batches (since train start)
@@ -300,7 +351,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
             # Forward
             with torch.cuda.amp.autocast(amp):
-                pred = model(imgs)  # forward
+                pred = model(imgs)  # forward, pred is originally "d"
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode

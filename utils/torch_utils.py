@@ -53,11 +53,11 @@ def smart_DDP(model):
     assert not check_version(torch.__version__, '1.12.0', pinned=True), \
         'torch==1.12.0 torchvision==0.13.0 DDP training is not supported due to a known issue. ' \
         'Please upgrade or downgrade torch to use DDP. See https://github.com/ultralytics/yolov5/issues/8395'
-    # if check_version(torch.__version__, '1.11.0'):
-    #     return DDP(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK, static_graph=True)
-    # else:
-    #     return DDP(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
-    return DDP(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK, static_graph=False)
+    if check_version(torch.__version__, '1.11.0'):
+        return DDP(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK, static_graph=True)
+    else:
+        return DDP(model, device_ids=[LOCAL_RANK], output_device=LOCAL_RANK)
+    
 
 
 def reshape_classifier_output(model, n=1000):
@@ -313,6 +313,7 @@ def copy_attr(a, b, include=(), exclude=()):
 
 
 def smart_optimizer(model, name='Adam', lr=0.001, momentum=0.9, decay=1e-5):
+    lr = 0.0000125    # my modification
     # YOLOv5 3-param group optimizer: 0) weights with decay, 1) weights no decay, 2) biases no decay
     g = [], [], []  # optimizer parameter groups
     bn = tuple(v for k, v in nn.__dict__.items() if 'Norm' in k)  # normalization layers, i.e. BatchNorm2d()
@@ -324,7 +325,7 @@ def smart_optimizer(model, name='Adam', lr=0.001, momentum=0.9, decay=1e-5):
     #            g[1].append(p)
     #        else:
     #            g[0].append(p)  # weight (with decay)
-                
+    
     for v in model.modules():
         if hasattr(v, 'bias') and isinstance(v.bias, nn.Parameter):  # bias (no decay)
             g[2].append(v.bias)

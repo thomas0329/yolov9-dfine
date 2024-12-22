@@ -203,6 +203,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     print("Current Working Directory:", os.getcwd())
 
     DF = dfine()
+    DFtrain_dataloader = dist_utils.warp_loader( # deal w DDP
+        DF.train_dataloader, shuffle=DF.train_dataloader.shuffle
+    )
 
     os.chdir("../")
     print("Current Working Directory:", os.getcwd())
@@ -310,9 +313,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             pbar = tqdm(pbar, total=nb, bar_format=TQDM_BAR_FORMAT)  # progress bar
         optimizer.zero_grad()
 
-        DFtrain_dataloader = dist_utils.warp_loader( # deal w DDP
-            DF.train_dataloader, shuffle=DF.train_dataloader.shuffle
-        )
+        
         
         train_stats = train_one_epoch(
                 model,

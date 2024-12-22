@@ -121,12 +121,14 @@ class ComputeLoss:
             BCEcls = FocalLoss(BCEcls, g)
 
         m = de_parallel(model).model[-1]  # Detect() module
-        self.balance = {3: [4.0, 1.0, 0.4]}.get(m.nl, [4.0, 1.0, 0.25, 0.06, 0.02])  # P3-P7
+        self.balance = {3: [4.0, 1.0, 0.4]}.get(m.num_layers, [4.0, 1.0, 0.25, 0.06, 0.02])  # P3-P7
         self.BCEcls = BCEcls
         self.hyp = h
-        self.stride = m.stride  # model strides
-        self.nc = m.nc  # number of classes
-        self.nl = m.nl  # number of layers
+        # self.stride = m.stride  # model strides 
+        self.stride = m.pre_bbox_head.stride  # model strides 
+        # my modification: set model strides to the stride of trad head of DF
+        self.nc = m.num_classes  # number of classes
+        self.nl = m.num_layers  # number of layers
         self.no = m.no
         self.reg_max = m.reg_max
         self.device = device
@@ -162,7 +164,7 @@ class ComputeLoss:
             # pred_dist = (pred_dist.view(b, a, c // 4, 4).softmax(2) * self.proj.type(pred_dist.dtype).view(1, 1, -1, 1)).sum(2)
         return dist2bbox(pred_dist, anchor_points, xywh=False)
 
-    def __call__(self, p, targets, img=None, epoch=0):
+    def __call__(self, p, targets, img=None, epoch=0):  # p: d
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
         feats = p[1] if isinstance(p, tuple) else p
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(

@@ -77,7 +77,7 @@ class Detect(nn.Module):
             b[-1].bias.data[:m.nc] = math.log(5 / m.nc / (640 / s) ** 2)  # cls (5 objects and 80 classes per 640 image)
 
 
-class DDetect(nn.Module):
+class DDetect(nn.Module):   # this
     # YOLO Detect head for detection models
     dynamic = False  # force grid reconstruction
     export = False  # export mode
@@ -87,12 +87,14 @@ class DDetect(nn.Module):
 
     def __init__(self, nc=80, ch=(), inplace=True):  # detection layer
         super().__init__()
+        ch = [512]  # my modification
         self.nc = nc  # number of classes
         self.nl = len(ch)  # number of detection layers
         self.reg_max = 16
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
         self.stride = torch.zeros(self.nl)  # strides computed during build
+        # stride is originally 0, then computed during the init of detectionmodel? 
 
         c2, c3 = make_divisible(max((ch[0] // 4, self.reg_max * 4, 16)), 4), max((ch[0], min((self.nc * 2, 128))))  # channels
         self.cv2 = nn.ModuleList(
@@ -102,19 +104,62 @@ class DDetect(nn.Module):
         self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
 
     def forward(self, x):
-        shape = x[0].shape  # BCHW
-        for i in range(self.nl):
-            x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
-        if self.training:
-            return x
-        elif self.dynamic or self.shape != shape:
-            self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5))
-            self.shape = shape
 
-        box, cls = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2).split((self.reg_max * 4, self.nc), 1)
+        # print('ddetect input', x.shape) # torch.Size([b, 300, 512])
+        x = x.transpose(1, 2)   # [b, 512, 300]
+        bs = x.shape[0]
+        x = x.reshape(bs, 512, -1, 1)   # [b, 512, 300, 1]
+        shape = x.shape  # BCHW
+        d = []
+        for i in range(self.nl):
+            # print('1', self.cv2[i](x[i]).shape)   # 1 torch.Size([1, 64, 300, 1])
+            # print('2', self.cv3[i](x[i]).shape)   # 2 torch.Size([1, 80, 300, 1])
+            d.append(torch.cat((self.cv2[i](x), self.cv3[i](x)), 1))
+        print('d', d)
+        # pred_distri, pred_scores = torch.cat([xi.view(d[0].shape[0], self.no, -1) for xi in d], 2).split(
+        #     (self.reg_max * 4, self.nc), 1)
+        # pred_scores = pred_scores.permute(0, 2, 1).contiguous()
+        # pred_distri = pred_distri.permute(0, 2, 1).contiguous()
+        # dtype = pred_scores.dtype
+        # # batch_size, grid_size = pred_scores.shape[:2]
+        # # imgsz = torch.tensor(d[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
+        # anchor_points, stride_tensor = make_anchors(d, self.stride, 0.5)
+
+        # targets
+        # targets = self.preprocess(targets, batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
+        # gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
+        # mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
+
+        # pboxes
+        # pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
+
+        
+
+        if (self.dynamic or self.shape != shape):   # here
+            self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(d, self.stride, 0.5))
+            # print('ddetect self.strides', self.strides)   tensor([[0.85352, 0.85352
+            # self.strides all 0
+            self.shape = shape
+        # print('d0', d[0]) # THERE IS value! 
+        box, cls = torch.cat([di.view(shape[0], self.no, -1) for di in d], 2).split((self.reg_max * 4, self.nc), 1)
+
+        # print('strides', self.strides)  # all zero!
         dbox = dist2bbox(self.dfl(box), self.anchors.unsqueeze(0), xywh=True, dim=1) * self.strides
         y = torch.cat((dbox, cls.sigmoid()), 1)
+
+        if self.training:
+            # return x
+            # dbox [1, 4, 300]
+            dbox = dbox.permute(0, 2, 1)    # [1, 300, 4]
+            print('dbox', dbox)   # THERE IS value NOW
+
+            return dbox, d
+
+        
+        
         return y if self.export else (y, x)
+
+        
 
     def bias_init(self):
         # Initialize Detect() biases, WARNING: requires stride availability
@@ -653,19 +698,20 @@ class DetectionModel(BaseModel):
         self.inplace = self.yaml.get('inplace', True)
 
         # Build strides, anchors
-        m = self.model[-1]  # Detect(), now becomes DFINETransformer
-
+        m = self.model[-1].pre_bbox_head  # Detect(), now is DDetect in dfine module
+        # print('m', m)
         if isinstance(m, (Detect, DDetect, Segment, DSegment, Panoptic)):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             forward = lambda x: self.forward(x)[0] if isinstance(m, (Segment, DSegment, Panoptic)) else self.forward(x)
-            m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
+            m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))[-1]])  # forward
+            # print('m.stride', m.stride)   # tensor([0.85333])
             # check_anchor_order(m)
             # m.anchors /= m.stride.view(-1, 1, 1)
             self.stride = m.stride
             m.bias_init()  # only run once
         
-        if isinstance(m, (DualDetect, TripleDetect, DualDDetect, TripleDDetect, DualDSegment, DFINETransformer)):
+        if isinstance(m, (DualDetect, TripleDetect, DualDDetect, TripleDDetect, DualDSegment)):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             # forward = lambda x: self.forward(x)[0][0] if isinstance(m, (DualDSegment)) else self.forward(x)[0]
@@ -673,7 +719,8 @@ class DetectionModel(BaseModel):
             forward = lambda x: self.forward(x)
             # return _, dual_out
             # dual_out = aux_d, main_d = d1, d2
-            # d1[0]: [1, 144, 15, 20]
+            # d1[0]: [1, 144, *15*, 20]
+            # out, main_d_dualddetect
             m.stride = torch.tensor([s / x[0].shape[-2] for x in forward(torch.zeros(1, ch, s, s))[-1]])  # err
             # print('m stride', m.stride) # [17.06667, 17.06667]
             # check_anchor_order(m)
@@ -853,9 +900,9 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
     # cfg.model.decoder, cfg.train_dataloader
     DF = dfine()
     DFdec = DF.model.decoder
-    DFdec.f = [31, 34, 37, 16, 19, 22]  # check this
+    DFdec.f = [15, 18, 21]  # check this
     DFdec.pre_bbox_head = layers[-1]    # DualDDetect
-
+    
     layers.pop()
     layers.append(DFdec)
 
