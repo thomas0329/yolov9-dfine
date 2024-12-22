@@ -324,81 +324,82 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         )
 
         if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
-                DFlr_scheduler.step()
+            DFlr_scheduler.step()
 
-        for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
-            callbacks.run('on_train_batch_start')
-            ni = i + nb * epoch  # number integrated batches (since train start)
-            imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
+        # for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
+        #     callbacks.run('on_train_batch_start')
+        #     ni = i + nb * epoch  # number integrated batches (since train start)
+        #     imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
 
-            # Warmup
-            if ni <= nw:
-                xi = [0, nw]  # x interp
-                # compute_loss.gr = np.interp(ni, xi, [0.0, 1.0])  # iou loss ratio (obj_loss = 1.0 or iou)
-                accumulate = max(1, np.interp(ni, xi, [1, nbs / batch_size]).round())
-                for j, x in enumerate(optimizer.param_groups):
-                    # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
-                    x['lr'] = np.interp(ni, xi, [hyp['warmup_bias_lr'] if j == 0 else 0.0, x['initial_lr'] * lf(epoch)])
-                    if 'momentum' in x:
-                        x['momentum'] = np.interp(ni, xi, [hyp['warmup_momentum'], hyp['momentum']])
+        #     # Warmup
+        #     if ni <= nw:
+        #         xi = [0, nw]  # x interp
+        #         # compute_loss.gr = np.interp(ni, xi, [0.0, 1.0])  # iou loss ratio (obj_loss = 1.0 or iou)
+        #         accumulate = max(1, np.interp(ni, xi, [1, nbs / batch_size]).round())
+        #         for j, x in enumerate(optimizer.param_groups):
+        #             # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
+        #             x['lr'] = np.interp(ni, xi, [hyp['warmup_bias_lr'] if j == 0 else 0.0, x['initial_lr'] * lf(epoch)])
+        #             if 'momentum' in x:
+        #                 x['momentum'] = np.interp(ni, xi, [hyp['warmup_momentum'], hyp['momentum']])
 
-            # Multi-scale
-            if opt.multi_scale:
-                sz = random.randrange(imgsz * 0.5, imgsz * 1.5 + gs) // gs * gs  # size
-                sf = sz / max(imgs.shape[2:])  # scale factor
-                if sf != 1:
-                    ns = [math.ceil(x * sf / gs) * gs for x in imgs.shape[2:]]  # new shape (stretched to gs-multiple)
-                    imgs = nn.functional.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
+        #     # Multi-scale
+        #     if opt.multi_scale:
+        #         sz = random.randrange(imgsz * 0.5, imgsz * 1.5 + gs) // gs * gs  # size
+        #         sf = sz / max(imgs.shape[2:])  # scale factor
+        #         if sf != 1:
+        #             ns = [math.ceil(x * sf / gs) * gs for x in imgs.shape[2:]]  # new shape (stretched to gs-multiple)
+        #             imgs = nn.functional.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
-            # Forward
-            with torch.cuda.amp.autocast(amp):
-                pred = model(imgs)  # forward, pred is originally "d"
-                loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
-                if RANK != -1:
-                    loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
-                if opt.quad:
-                    loss *= 4.
+        #     # Forward
+        #     with torch.cuda.amp.autocast(amp):
+        #         pred = model(imgs)  # forward, pred is originally "d"
+        #         loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
+        #         if RANK != -1:
+        #             loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
+        #         if opt.quad:
+        #             loss *= 4.
 
-            # Backward
-            scaler.scale(loss).backward()
+        #     # Backward
+        #     scaler.scale(loss).backward()
 
-            # Optimize - https://pytorch.org/docs/master/notes/amp_examples.html
-            if ni - last_opt_step >= accumulate:
-                scaler.unscale_(optimizer)  # unscale gradients
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)  # clip gradients
-                scaler.step(optimizer)  # optimizer.step
-                scaler.update()
-                optimizer.zero_grad()
-                if ema:
-                    ema.update(model)
-                last_opt_step = ni
+        #     # Optimize - https://pytorch.org/docs/master/notes/amp_examples.html
+        #     if ni - last_opt_step >= accumulate:
+        #         scaler.unscale_(optimizer)  # unscale gradients
+        #         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)  # clip gradients
+        #         scaler.step(optimizer)  # optimizer.step
+        #         scaler.update()
+        #         optimizer.zero_grad()
+        #         if ema:
+        #             ema.update(model)
+        #         last_opt_step = ni
 
-            # Log
-            if RANK in {-1, 0}:
-                mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
-                mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-                pbar.set_description(('%11s' * 2 + '%11.4g' * 5) %
-                                     (f'{epoch}/{epochs - 1}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
-                callbacks.run('on_train_batch_end', model, ni, imgs, targets, paths, list(mloss))
-                if callbacks.stop_training:
-                    return
-            # end batch ------------------------------------------------------------------------------------------------
+        #     # Log
+        #     if RANK in {-1, 0}:
+        #         mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
+        #         mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
+        #         pbar.set_description(('%11s' * 2 + '%11.4g' * 5) %
+        #                              (f'{epoch}/{epochs - 1}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
+        #         callbacks.run('on_train_batch_end', model, ni, imgs, targets, paths, list(mloss))
+        #         if callbacks.stop_training:
+        #             return
+        #     # end batch ------------------------------------------------------------------------------------------------
 
         # Scheduler
         lr = [x['lr'] for x in optimizer.param_groups]  # for loggers
-        scheduler.step()
+        # scheduler.step()
 
         if RANK in {-1, 0}:
             # mAP
             callbacks.run('on_train_epoch_end', epoch=epoch)
-            ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])
+            # its dfine counterpart?
+            # ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])   # model to ema
             final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
             if not noval or final_epoch:  # Calculate mAP
                 results, maps, _ = validate.run(data_dict,
                                                 batch_size=batch_size // WORLD_SIZE * 2,
                                                 imgsz=imgsz,
                                                 half=amp,
-                                                model=ema.ema,
+                                                model=DFema.ema,  # model for valid depends on ema
                                                 single_cls=single_cls,
                                                 dataloader=val_loader,
                                                 save_dir=save_dir,
@@ -420,8 +421,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     'epoch': epoch,
                     'best_fitness': best_fitness,
                     'model': deepcopy(de_parallel(model)).half(),
-                    'ema': deepcopy(ema.ema).half(),
-                    'updates': ema.updates,
+                    'ema': deepcopy(DFema.ema).half(),
+                    'updates': DFema.updates,
                     'optimizer': optimizer.state_dict(),
                     'opt': vars(opt),
                     'git': GIT_INFO,  # {remote, branch, commit} if a git repo

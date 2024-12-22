@@ -176,7 +176,7 @@ def run(
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')
     pbar = tqdm(dataloader, desc=s, bar_format=TQDM_BAR_FORMAT)  # progress bar
-    for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
+    for batch_i, (im, targets, paths, shapes) in enumerate(pbar):   # yolo loader
         callbacks.run('on_val_batch_start')
         with dt[0]:
             if cuda:
@@ -187,12 +187,13 @@ def run(
             nb, _, height, width = im.shape  # batch size, channels, height, width
 
         # Inference
-        with dt[1]:
-            preds, train_out = model(im) if compute_loss else (model(im, augment=augment), None)
+        # compute_loss is given
+        with dt[1]: # out, main_d_ddetect
+            preds, main_d_ddetect = model(im) if compute_loss else (model(im, augment=augment), None)
 
         # Loss
         if compute_loss:
-            loss += compute_loss(train_out, targets)[1]  # box, obj, cls
+            loss += compute_loss(preds, targets)[1]  # box, obj, cls
 
         # NMS
         targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels

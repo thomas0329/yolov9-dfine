@@ -164,7 +164,7 @@ class ComputeLoss:
             # pred_dist = (pred_dist.view(b, a, c // 4, 4).softmax(2) * self.proj.type(pred_dist.dtype).view(1, 1, -1, 1)).sum(2)
         return dist2bbox(pred_dist, anchor_points, xywh=False)
 
-    def __call__(self, p, targets, img=None, epoch=0):  # p: d
+    def __call__(self, p, targets, img=None, epoch=0):  # p: out (dfine), targets: from yolo loader
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
         feats = p[1] if isinstance(p, tuple) else p
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
