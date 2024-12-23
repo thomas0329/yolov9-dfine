@@ -308,23 +308,23 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             pbar = tqdm(pbar, total=nb, bar_format=TQDM_BAR_FORMAT)  # progress bar
         optimizer.zero_grad()
 
-        train_stats = train_one_epoch(
-                model,
-                DF.criterion,
-                DFtrain_dataloader,
-                optimizer,  # yolo opt for now
-                device,
-                epoch,
-                max_norm=DF.clip_max_norm,
-                print_freq=DF.print_freq,
-                ema=DFema,    
-                # scaler=DF.scaler, # disable amp
-                lr_warmup_scheduler=DFlr_warmup_scheduler,
-                writer=DF.writer
-        )
+        # train_stats = train_one_epoch(
+        #         model,
+        #         DF.criterion,
+        #         DFtrain_dataloader,
+        #         optimizer,  # yolo opt for now
+        #         device,
+        #         epoch,
+        #         max_norm=DF.clip_max_norm,
+        #         print_freq=DF.print_freq,
+        #         ema=DFema,    
+        #         # scaler=DF.scaler, # disable amp
+        #         lr_warmup_scheduler=DFlr_warmup_scheduler,
+        #         writer=DF.writer
+        # )
 
-        if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
-            DFlr_scheduler.step()
+        # if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
+        #     DFlr_scheduler.step()
 
         # for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
         #     callbacks.run('on_train_batch_start')
@@ -388,6 +388,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         lr = [x['lr'] for x in optimizer.param_groups]  # for loggers
         # scheduler.step()
 
+        print('validation!')
         if RANK in {-1, 0}:
             # mAP
             callbacks.run('on_train_epoch_end', epoch=epoch)
@@ -399,7 +400,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                                 batch_size=batch_size // WORLD_SIZE * 2,
                                                 imgsz=imgsz,
                                                 half=amp,
-                                                model=DFema.ema,  # model for valid depends on ema
+                                                model=DFema.module,  # model for valid depends on ema
                                                 single_cls=single_cls,
                                                 dataloader=val_loader,
                                                 save_dir=save_dir,
@@ -421,7 +422,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     'epoch': epoch,
                     'best_fitness': best_fitness,
                     'model': deepcopy(de_parallel(model)).half(),
-                    'ema': deepcopy(DFema.ema).half(),
+                    'ema': deepcopy(DFema.module).half(),
                     'updates': DFema.updates,
                     'optimizer': optimizer.state_dict(),
                     'opt': vars(opt),

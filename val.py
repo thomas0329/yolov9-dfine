@@ -189,11 +189,11 @@ def run(
         # Inference
         # compute_loss is given
         with dt[1]: # out, main_d_ddetect
-            preds, main_d_ddetect = model(im) if compute_loss else (model(im, augment=augment), None)
+            (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)
 
         # Loss
         if compute_loss:
-            loss += compute_loss(preds, targets)[1]  # box, obj, cls
+            loss += compute_loss((preds, d_ddetect), targets)[1]  # box, obj, cls
 
         # NMS
         targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels

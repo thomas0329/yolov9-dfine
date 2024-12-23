@@ -164,18 +164,22 @@ class ComputeLoss:
             # pred_dist = (pred_dist.view(b, a, c // 4, 4).softmax(2) * self.proj.type(pred_dist.dtype).view(1, 1, -1, 1)).sum(2)
         return dist2bbox(pred_dist, anchor_points, xywh=False)
 
-    def __call__(self, p, targets, img=None, epoch=0):  # p: out (dfine), targets: from yolo loader
+    def __call__(self, p, targets, img=None, epoch=0):  # p: out(dfine), d_ddetect. targets: from yolo loader
+        out, d_ddetect = p
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
-        feats = p[1] if isinstance(p, tuple) else p
-        pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
-            (self.reg_max * 4, self.nc), 1)
-        pred_scores = pred_scores.permute(0, 2, 1).contiguous()
-        pred_distri = pred_distri.permute(0, 2, 1).contiguous()
-
+        # feats = p[1] if isinstance(p, tuple) else p
+        # pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
+        #     (self.reg_max * 4, self.nc), 1)
+        # pred_scores = pred_scores.permute(0, 2, 1).contiguous()
+        # pred_distri = pred_distri.permute(0, 2, 1).contiguous()
+        pred_distri = out['pred_corners']
+        pred_scores = out['pred_logits']
+        # feats: some kind of "d" from dfine out. trad head (ddetect) gives d, but it's the d of the initial pred.
+        # but the size should be the same
         dtype = pred_scores.dtype
         batch_size, grid_size = pred_scores.shape[:2]
-        imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
-        anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
+        imgsz = torch.tensor(d_ddetect[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
+        anchor_points, stride_tensor = make_anchors(d_ddetect, self.stride, 0.5)
 
         # targets
         targets = self.preprocess(targets, batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
@@ -183,7 +187,11 @@ class ComputeLoss:
         mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
 
         # pboxes
-        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
+        # pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
+        pred_bboxes = out['pred_boxes']
+
+        # what to get:             pred_bboxes, pred_distri, pred_scores
+        # their dfine counterpart: pred_boxes, pred_corners, pred_logits
 
         target_labels, target_bboxes, target_scores, fg_mask = self.assigner(
             pred_scores.detach().sigmoid(),

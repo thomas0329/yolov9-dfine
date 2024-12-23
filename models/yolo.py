@@ -114,33 +114,13 @@ class DDetect(nn.Module):   # this
         for i in range(self.nl):
             # print('1', self.cv2[i](x[i]).shape)   # 1 torch.Size([1, 64, 300, 1])
             # print('2', self.cv3[i](x[i]).shape)   # 2 torch.Size([1, 80, 300, 1])
-            d.append(torch.cat((self.cv2[i](x), self.cv3[i](x)), 1))
-        # print('d', d)
-        # pred_distri, pred_scores = torch.cat([xi.view(d[0].shape[0], self.no, -1) for xi in d], 2).split(
-        #     (self.reg_max * 4, self.nc), 1)
-        # pred_scores = pred_scores.permute(0, 2, 1).contiguous()
-        # pred_distri = pred_distri.permute(0, 2, 1).contiguous()
-        # dtype = pred_scores.dtype
-        # # batch_size, grid_size = pred_scores.shape[:2]
-        # # imgsz = torch.tensor(d[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
-        # anchor_points, stride_tensor = make_anchors(d, self.stride, 0.5)
-
-        # targets
-        # targets = self.preprocess(targets, batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
-        # gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
-        # mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
-
-        # pboxes
-        # pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
-
-        
+            d.append(torch.cat((self.cv2[i](x), self.cv3[i](x)), 1))   
 
         if (self.dynamic or self.shape != shape):   # here
             self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(d, self.stride, 0.5))
             # print('ddetect self.strides', self.strides)   tensor([[0.85352, 0.85352
-            # self.strides all 0
             self.shape = shape
-        # print('d0', d[0]) # THERE IS value! 
+        
         box, cls = torch.cat([di.view(shape[0], self.no, -1) for di in d], 2).split((self.reg_max * 4, self.nc), 1)
 
         # print('strides', self.strides)  # all zero!
@@ -151,7 +131,6 @@ class DDetect(nn.Module):   # this
             # return x
             # dbox [1, 4, 300]
             dbox = dbox.permute(0, 2, 1)    # [1, 300, 4]
-            # print('dbox', dbox)   # THERE IS value NOW
 
             return dbox, d
 
