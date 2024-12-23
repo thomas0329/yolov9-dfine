@@ -110,7 +110,9 @@ def run(
     if training:  # called by train.py
         device, pt, jit, engine = next(model.parameters()).device, True, False, False  # get model device, PyTorch model
         half &= device.type != 'cpu'  # half precision only supported on CUDA
-        model.half() if half else model.float()
+        # model.half() if half else model.float()
+        print('model set to float')
+        model.float()
     else:  # called directly
         device = select_device(device, batch_size=batch_size)
 
@@ -182,13 +184,15 @@ def run(
             if cuda:
                 im = im.to(device, non_blocking=True)
                 targets = targets.to(device)
-            im = im.half() if half else im.float()  # uint8 to fp16/32
+            # im = im.half() if half else im.float()  # uint8 to fp16/32
+            im = im.float()  # uint8 to fp16/32
             im /= 255  # 0 - 255 to 0.0 - 1.0
             nb, _, height, width = im.shape  # batch size, channels, height, width
 
         # Inference
         # compute_loss is given
         with dt[1]: # out, main_d_ddetect
+            # im in valid torch.float16
             (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)
 
         # Loss
