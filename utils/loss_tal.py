@@ -173,7 +173,7 @@ class ComputeLoss:
         # pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         # pred_distri = pred_distri.permute(0, 2, 1).contiguous()
         pred_distri = out['pred_corners']
-        pred_scores = out['pred_logits']
+        pred_scores = out['pred_logits']    # is it possible that pred_logits contains both distribution and class?
         # feats: some kind of "d" from dfine out. trad head (ddetect) gives d, but it's the d of the initial pred.
         # but the size should be the same
         dtype = pred_scores.dtype

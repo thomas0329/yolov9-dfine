@@ -20,6 +20,7 @@ from D_FINE.src.solver.det_engine import train_one_epoch
 from D_FINE.src.misc import dist_utils
 from torch.optim.lr_scheduler import MultiStepLR
 from D_FINE.src.optim import LinearWarmup
+from D_FINE.src.solver.det_engine import evaluate
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # root directory
@@ -188,7 +189,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
         LOGGER.info('Using SyncBatchNorm()')
 
-    # Trainloader
 
     os.chdir("D_FINE")
     print("Current Working Directory:", os.getcwd())
@@ -196,6 +196,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     DF = dfine()
     DFtrain_dataloader = dist_utils.warp_loader( # deal w DDP
         DF.train_dataloader, shuffle=DF.train_dataloader.shuffle
+    )
+    DFval_dataloader = dist_utils.warp_loader(
+        DF.val_dataloader, shuffle=DF.val_dataloader.shuffle
     )
     # DFlr_scheduler = DF.lr_scheduler    # should depend on opt
     DFscalar = DF.scaler
@@ -309,23 +312,33 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             pbar = tqdm(pbar, total=nb, bar_format=TQDM_BAR_FORMAT)  # progress bar
         optimizer.zero_grad()
 
-        # train_stats = train_one_epoch(
-        #         model,
-        #         DF.criterion,
-        #         DFtrain_dataloader,
-        #         optimizer,  # yolo opt for now
-        #         device,
-        #         epoch,
-        #         max_norm=DF.clip_max_norm,
-        #         print_freq=DF.print_freq,
-        #         ema=DFema,    
-        #         # scaler=DF.scaler, # disable amp
-        #         lr_warmup_scheduler=DFlr_warmup_scheduler,
-        #         writer=DF.writer
-        # )
+        train_stats = train_one_epoch(
+                model,
+                DF.criterion,
+                DFtrain_dataloader,
+                optimizer,  # yolo opt for now
+                device,
+                epoch,
+                max_norm=DF.clip_max_norm,
+                print_freq=DF.print_freq,
+                ema=DFema,    
+                # scaler=DF.scaler, # disable amp
+                lr_warmup_scheduler=DFlr_warmup_scheduler,
+                writer=DF.writer
+        )
 
-        # if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
-        #     DFlr_scheduler.step()
+        if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
+            DFlr_scheduler.step()
+
+        test_stats, coco_evaluator = evaluate(
+            DFema,
+            DF.criterion,
+            DF.postprocessor,
+            DFval_dataloader,
+            DF.evaluator,
+            device
+        )
+
 
         # for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
         #     callbacks.run('on_train_batch_start')
