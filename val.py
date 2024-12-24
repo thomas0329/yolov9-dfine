@@ -112,6 +112,10 @@ def run(
         half &= device.type != 'cpu'  # half precision only supported on CUDA
         # model.half() if half else model.float()
         print('model set to float')
+        # print('printing model')
+        
+        # for name, module in model.model.named_children():
+        #     print(name)
         model.float()
     else:  # called directly
         device = select_device(device, batch_size=batch_size)
@@ -191,6 +195,8 @@ def run(
 
         # Inference
         # compute_loss is given
+        model.model[22].pre_bbox_head.training = True
+        model.model[22].training = True # dfinetransformer
         with dt[1]: # out, main_d_ddetect
             # im in valid torch.float16
             (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)

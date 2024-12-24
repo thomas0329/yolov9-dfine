@@ -135,7 +135,7 @@ class DDetect(nn.Module):   # this
             return dbox, d
 
         
-        
+        # bug: training is False during validation
         return y if self.export else (y, x)
 
         
