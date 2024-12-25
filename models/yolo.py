@@ -127,16 +127,15 @@ class DDetect(nn.Module):   # this
         dbox = dist2bbox(self.dfl(box), self.anchors.unsqueeze(0), xywh=True, dim=1) * self.strides
         y = torch.cat((dbox, cls.sigmoid()), 1)
 
-        if self.training:
+        # if self.training:
             # return x
             # dbox [1, 4, 300]
-            dbox = dbox.permute(0, 2, 1)    # [1, 300, 4]
+        dbox = dbox.permute(0, 2, 1)    # [1, 300, 4]
 
-            return dbox, d
+        return dbox, d
 
         
-        # bug: training is False during validation
-        return y if self.export else (y, x)
+        # return y if self.export else (y, x)
 
         
 

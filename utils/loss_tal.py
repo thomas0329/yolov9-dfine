@@ -206,6 +206,7 @@ class ComputeLoss:
 
         # cls loss
         # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
+        # target_scores torch.Size([64, 300, 80]), same as the shape of pred_scores, but why?
         loss[1] = self.BCEcls(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
 
         # bbox loss

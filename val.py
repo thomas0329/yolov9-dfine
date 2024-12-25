@@ -195,7 +195,7 @@ def run(
 
         # Inference
         # compute_loss is given
-        model.model[22].pre_bbox_head.training = True
+        # model.model[22].pre_bbox_head.training = True
         # model.model[22].training = True # dfinetransformer
         with dt[1]: # out, main_d_ddetect. orginally: (y, x), y: dbox & cls
             (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)

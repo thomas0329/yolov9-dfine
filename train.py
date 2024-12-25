@@ -285,7 +285,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 f'Using {train_loader.num_workers * WORLD_SIZE} dataloader workers\n'
                 f"Logging results to {colorstr('bold', save_dir)}\n"
                 f'Starting training for {epochs} epochs...')
-    for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
+    # epoch: 72 for dfine
+    for epoch in range(start_epoch, epochs):  # ------------------------------------------------------------------
         callbacks.run('on_train_epoch_start')
         model.train()
 
@@ -310,24 +311,25 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         if RANK in {-1, 0}:
             pbar = tqdm(pbar, total=nb, bar_format=TQDM_BAR_FORMAT)  # progress bar
         optimizer.zero_grad()
+        print('training')
 
-        # train_stats = train_one_epoch(
-        #         model,
-        #         DF.criterion,
-        #         DFtrain_dataloader,
-        #         optimizer,  # yolo opt for now
-        #         device,
-        #         epoch,
-        #         max_norm=DF.clip_max_norm,
-        #         print_freq=DF.print_freq,
-        #         ema=DFema,    
-        #         # scaler=DF.scaler, # disable amp
-        #         lr_warmup_scheduler=DFlr_warmup_scheduler,
-        #         writer=DF.writer
-        # )
-
-        # if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
-        #     DFlr_scheduler.step()
+        train_stats = train_one_epoch(
+                model,  # Model, smart_DDP
+                DF.criterion,
+                DFtrain_dataloader,
+                optimizer,  # yolo opt for now
+                device,
+                epoch,
+                max_norm=DF.clip_max_norm,
+                print_freq=DF.print_freq,
+                ema=DFema,  # depends on model  
+                # scaler=DF.scaler, # disable amp
+                lr_warmup_scheduler=DFlr_warmup_scheduler,
+                writer=DF.writer
+        )
+        print('training finished!')
+        if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
+            DFlr_scheduler.step()
 
         # test_stats, coco_evaluator = evaluate(
         #     DFema,
@@ -408,6 +410,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             # ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])   # model to ema
             final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
             if not noval or final_epoch:  # Calculate mAP
+                
                 results, maps, _ = validate.run(data_dict,
                                                 batch_size=batch_size // WORLD_SIZE * 2,
                                                 imgsz=imgsz,
@@ -419,6 +422,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                                 plots=False,
                                                 callbacks=callbacks,
                                                 compute_loss=compute_loss)
+                print('validation finished!')
 
             # Update best mAP
             fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
@@ -471,6 +475,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     strip_optimizer(f, best_striped)  # strip optimizers
                 if f is best:
                     LOGGER.info(f'\nValidating {f}...')
+                    # plot at the end of training
                     results, _, _ = validate.run(
                         data_dict,
                         batch_size=batch_size // WORLD_SIZE * 2,
@@ -698,3 +703,5 @@ def run(**kwargs):
 if __name__ == "__main__":
     opt = parse_opt()
     main(opt)
+    # runs/train/gelan-c56
+    # next: try running inference loading weights I trained

@@ -916,7 +916,7 @@ def non_max_suppression(
     prediction['pred_logits'] = prediction['pred_logits'].permute(0, 2, 1)
     prediction['pred_boxes'] = prediction['pred_boxes'].permute(0, 2, 1)
     prediction = torch.cat((prediction['pred_boxes'], prediction['pred_logits'].sigmoid()), 1) # 4 + 80
-    print('pred modified from dfine', prediction.shape) # should be box, class  # [32, 84, 7056]
+    # print('pred modified from dfine', prediction.shape) # should be box, class  # [32, 84, 7056]
     mi = 4 + nc  # mask start index
     xc = prediction[:, 4:mi].amax(1) > conf_thres  # candidates
 
