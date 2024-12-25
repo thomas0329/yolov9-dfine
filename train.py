@@ -202,7 +202,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     )
     # DFlr_scheduler = DF.lr_scheduler    # should depend on opt
     DFscalar = DF.scaler
-    print('df scalar', DFscalar)
     DFlr_scheduler = MultiStepLR(optimizer=optimizer, milestones=[500], gamma=0.1)
     DFlr_warmup_scheduler = LinearWarmup(lr_scheduler=DFlr_scheduler, warmup_duration=500)      # depends on lr_scheduler
     
@@ -312,33 +311,32 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             pbar = tqdm(pbar, total=nb, bar_format=TQDM_BAR_FORMAT)  # progress bar
         optimizer.zero_grad()
 
-        train_stats = train_one_epoch(
-                model,
-                DF.criterion,
-                DFtrain_dataloader,
-                optimizer,  # yolo opt for now
-                device,
-                epoch,
-                max_norm=DF.clip_max_norm,
-                print_freq=DF.print_freq,
-                ema=DFema,    
-                # scaler=DF.scaler, # disable amp
-                lr_warmup_scheduler=DFlr_warmup_scheduler,
-                writer=DF.writer
-        )
+        # train_stats = train_one_epoch(
+        #         model,
+        #         DF.criterion,
+        #         DFtrain_dataloader,
+        #         optimizer,  # yolo opt for now
+        #         device,
+        #         epoch,
+        #         max_norm=DF.clip_max_norm,
+        #         print_freq=DF.print_freq,
+        #         ema=DFema,    
+        #         # scaler=DF.scaler, # disable amp
+        #         lr_warmup_scheduler=DFlr_warmup_scheduler,
+        #         writer=DF.writer
+        # )
 
-        if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
-            DFlr_scheduler.step()
+        # if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
+        #     DFlr_scheduler.step()
 
-        test_stats, coco_evaluator = evaluate(
-            DFema,
-            DF.criterion,
-            DF.postprocessor,
-            DFval_dataloader,
-            DF.evaluator,
-            device
-        )
-
+        # test_stats, coco_evaluator = evaluate(
+        #     DFema,
+        #     DF.criterion,
+        #     DF.postprocessor,
+        #     DFval_dataloader,
+        #     DF.evaluator,
+        #     device
+        # )
 
         # for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
         #     callbacks.run('on_train_batch_start')

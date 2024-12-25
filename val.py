@@ -197,8 +197,7 @@ def run(
         # compute_loss is given
         model.model[22].pre_bbox_head.training = True
         # model.model[22].training = True # dfinetransformer
-        with dt[1]: # out, main_d_ddetect
-            # im in valid torch.float16
+        with dt[1]: # out, main_d_ddetect. orginally: (y, x), y: dbox & cls
             (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)
 
         # Loss
@@ -215,7 +214,8 @@ def run(
                                         labels=lb,
                                         multi_label=True,
                                         agnostic=single_cls,
-                                        max_det=max_det)
+                                        max_det=max_det, 
+                                        device=device)  # added
 
         # Metrics
         for si, pred in enumerate(preds):
