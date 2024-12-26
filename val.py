@@ -199,6 +199,7 @@ def run(
         # model.model[22].training = True # dfinetransformer
         with dt[1]: # out, main_d_ddetect. orginally: (y, x), y: dbox & cls
             (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)
+            # preds: dfine's format
 
         # Loss
         if compute_loss:
@@ -208,6 +209,7 @@ def run(
         targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         with dt[2]:
+            # preds format conversion has to be finished!
             preds = non_max_suppression(preds,
                                         conf_thres,
                                         iou_thres,
@@ -218,7 +220,7 @@ def run(
                                         device=device)  # added
 
         # Metrics
-        for si, pred in enumerate(preds):
+        for si, pred in enumerate(preds):   # preds should be in yolo's format!
             labels = targets[targets[:, 0] == si, 1:]
             nl, npr = labels.shape[0], pred.shape[0]  # number of labels, predictions
             path, shape = Path(paths[si]), shapes[si][0]

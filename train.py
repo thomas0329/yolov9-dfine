@@ -49,6 +49,7 @@ from utils.torch_utils import (EarlyStopping, de_parallel, select_device, smart_
                                smart_optimizer, smart_resume, torch_distributed_zero_first)
 from D_FINE.src.optim.ema import ModelEMA
 
+
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
 WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
@@ -285,7 +286,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 f'Using {train_loader.num_workers * WORLD_SIZE} dataloader workers\n'
                 f"Logging results to {colorstr('bold', save_dir)}\n"
                 f'Starting training for {epochs} epochs...')
-    # epoch: 72 for dfine
+    # 72 eps for dfine
     for epoch in range(start_epoch, epochs):  # ------------------------------------------------------------------
         callbacks.run('on_train_epoch_start')
         model.train()
@@ -313,23 +314,25 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         optimizer.zero_grad()
         print('training')
 
-        train_stats = train_one_epoch(
-                model,  # Model, smart_DDP
-                DF.criterion,
-                DFtrain_dataloader,
-                optimizer,  # yolo opt for now
-                device,
-                epoch,
-                max_norm=DF.clip_max_norm,
-                print_freq=DF.print_freq,
-                ema=DFema,  # depends on model  
-                # scaler=DF.scaler, # disable amp
-                lr_warmup_scheduler=DFlr_warmup_scheduler,
-                writer=DF.writer
-        )
-        print('training finished!')
-        if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
-            DFlr_scheduler.step()
+        
+
+        # train_stats, model, DFema = train_one_epoch(
+        #         model,  # Model, smart_DDP
+        #         DF.criterion,
+        #         DFtrain_dataloader,
+        #         optimizer,  # yolo opt for now
+        #         device,
+        #         epoch,
+        #         max_norm=DF.clip_max_norm,
+        #         print_freq=DF.print_freq,
+        #         ema=DFema,  # depends on model  
+        #         # scaler=DF.scaler, # disable amp
+        #         lr_warmup_scheduler=DFlr_warmup_scheduler,
+        #         writer=DF.writer
+        # )
+        # print('training finished!')
+        # if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
+        #     DFlr_scheduler.step()
 
         # test_stats, coco_evaluator = evaluate(
         #     DFema,
@@ -415,7 +418,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                                 batch_size=batch_size // WORLD_SIZE * 2,
                                                 imgsz=imgsz,
                                                 half=amp,
-                                                model=DFema.module,  # model for valid depends on ema
+                                                model=DFema.module,  # is this correct?
                                                 single_cls=single_cls,
                                                 dataloader=val_loader,
                                                 save_dir=save_dir,
@@ -465,6 +468,12 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
         # end epoch ----------------------------------------------------------------------------------------------------
     # end training -----------------------------------------------------------------------------------------------------
+
+    # load weights
+    print('load weights')
+    model = DetectMultiBackend('./runs/train/gelan-c61/weights/best.pt', device=device, dnn=False, data='./data/coco.yaml', fp16=half)
+    model.eval()
+
     if RANK in {-1, 0}:
         LOGGER.info(f'\n{epoch - start_epoch + 1} epochs completed in {(time.time() - t0) / 3600:.3f} hours.')
         for f in last, best:
@@ -703,5 +712,16 @@ def run(**kwargs):
 if __name__ == "__main__":
     opt = parse_opt()
     main(opt)
+
+    # 1 epochs completed in 1.858 hours.
     # runs/train/gelan-c56
-    # next: try running inference loading weights I trained
+    # tried running inference loading weights I trained, no results
+    # runs/train/gelan-c61 (latest)
+
+    # loss_bbox_dn_pre: 11.6345 (11.6345)
+    # to 
+    # loss_bbox_dn_pre: 10.5931 (10.6084)
+
+    # the model should be able to reach mAP=0.4 after 6 to 15 epochs of training
+    # performance should at least be "normal" 
+    
