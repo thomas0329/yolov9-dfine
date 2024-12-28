@@ -72,7 +72,7 @@ def process_batch(detections, labels, iouv):
             correct[matches[:, 1].astype(int), i] = True
     return torch.tensor(correct, dtype=torch.bool, device=iouv.device)
 
-from D_FINE.src.zoo.dfine.postprocessor import DFINEPostProcessor
+
 
 @smart_inference_mode()
 def run(
@@ -107,7 +107,7 @@ def run(
         compute_loss=None,
 ):
     
-    postprocessor = DFINEPostProcessor(use_focal_loss=True, num_classes=80, num_top_queries=300)
+    
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
@@ -203,9 +203,11 @@ def run(
         # model.model[22].pre_bbox_head.training = True
         # model.model[22].training = True # dfinetransformer
         with dt[1]: # out, main_d_ddetect. orginally: (y, x), y: dbox & cls
-            (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)
-            # preds: dfine's format
-            results = postprocessor(preds, orig_target_sizes.to(device))
+            (preds, d_ddetect) = model(im)  # for now
+            # (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)
+            # print('preds', preds.keys())    # preds dict_keys(['pred_logits', 'pred_boxes', 'pred_corners'])
+        
+        # sigged logits torch.Size([64, 300, 80])
 
         # Loss
         compute_loss = False    # for now
@@ -220,9 +222,6 @@ def run(
             # preds format conversion has to be finished!
             # preds before NMS: # [32, 84, 7056]
             # dict_keys(['pred_logits', 'pred_boxes', 'pred_corners'])
-            preds['pred_logits'] = preds['pred_logits'].permute(0, 2, 1)
-            preds['pred_boxes'] = preds['pred_boxes'].permute(0, 2, 1)
-            preds = torch.cat((preds['pred_boxes'], preds['pred_logits'].sigmoid()), 1) # 4 + 80
             
             # preds b4 nms torch.Size([64, 84, 300])    (originally [64, 84, 5292])
             # preds format: torch.cat((dbox, cls.sigmoid()), 1) # 4 + 80
@@ -233,6 +232,8 @@ def run(
                                         multi_label=True,
                                         agnostic=single_cls,
                                         max_det=max_det, 
+                                        orig_target_sizes=orig_target_sizes,
+                                        device=device
                                         )
             # print('preds', preds)   # not really all zero
             

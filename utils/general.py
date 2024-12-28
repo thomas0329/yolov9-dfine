@@ -881,9 +881,10 @@ def clip_segments(segments, shape):
         segments[:, 0] = segments[:, 0].clip(0, shape[1])  # x
         segments[:, 1] = segments[:, 1].clip(0, shape[0])  # y
 
+from D_FINE.src.zoo.dfine.postprocessor import DFINEPostProcessor
 
 def non_max_suppression(
-        prediction,
+        preds,
         conf_thres=0.25,
         iou_thres=0.45,
         classes=None,
@@ -892,19 +893,27 @@ def non_max_suppression(
         labels=(),
         max_det=300,
         nm=0,  # number of masks
+        orig_target_sizes=None,
+        device=None
 ):
     """Non-Maximum Suppression (NMS) on inference results to reject overlapping detections
 
     Returns:
          list of detections, on (n,6) tensor per image [xyxy, conf, cls]
     """
+    postprocessor = DFINEPostProcessor(use_focal_loss=True, num_classes=80, num_top_queries=300)
+    results = postprocessor(preds, orig_target_sizes.to(device))
+
+    boxes = results['boxes'].permute(0, 2, 1)
+    logits = results['logits'].permute(0, 2, 1)
+    prediction = torch.cat((boxes, logits), 1) # 4 + 80
     
-    if isinstance(prediction, (list, tuple)):  # YOLO model in validation model, output = (inference_out, loss_out)
-        prediction = prediction[0]  # select only inference output
+    # if isinstance(prediction, (list, tuple)):  # YOLO model in validation model, output = (inference_out, loss_out)
+    #     prediction = prediction[0]  # select only inference output
 
     # prediction as the input of NMS torch.Size([32, 84, 7056])
 
-    device = prediction.device
+    # device = prediction.device
     mps = 'mps' in device.type  # Apple MPS
     if mps:  # MPS not fully supported yet, convert tensors to CPU before NMS
         prediction = prediction.cpu()
@@ -991,9 +1000,10 @@ def non_max_suppression(
         output[xi] = x[i]
         if mps:
             output[xi] = output[xi].to(device)
-        if (time.time() - t) > time_limit:
-            LOGGER.warning(f'WARNING ⚠️ NMS time limit {time_limit:.3f}s exceeded')
-            break  # time limit exceeded
+
+        # if (time.time() - t) > time_limit:
+        #     LOGGER.warning(f'WARNING ⚠️ NMS time limit {time_limit:.3f}s exceeded')
+        #     break  # time limit exceeded
 
     return output
 
