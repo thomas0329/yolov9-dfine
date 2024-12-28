@@ -114,11 +114,7 @@ def run(
         device, pt, jit, engine = next(model.parameters()).device, True, False, False  # get model device, PyTorch model
         half &= device.type != 'cpu'  # half precision only supported on CUDA
         # model.half() if half else model.float()
-        print('model set to float')
-        # print('printing model')
-        
-        # for name, module in model.model.named_children():
-        #     print(name)
+    
         model.float()
     else:  # called directly
         device = select_device(device, batch_size=batch_size)
@@ -185,7 +181,14 @@ def run(
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')
     pbar = tqdm(dataloader, desc=s, bar_format=TQDM_BAR_FORMAT)  # progress bar
+
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):   # yolo loader
+        # im [64, 3, 416, 672]
+        batch_sz = im.shape[0]
+        orig_target_sizes = im.shape[2:]
+        orig_target_sizes = torch.tensor([im.shape[2], im.shape[3]])
+        orig_target_sizes = orig_target_sizes.repeat(batch_sz, 1)   # torch.Size([b, 2])
+
         callbacks.run('on_val_batch_start')
         with dt[0]:
             if cuda:
@@ -202,13 +205,12 @@ def run(
         with dt[1]: # out, main_d_ddetect. orginally: (y, x), y: dbox & cls
             (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)
             # preds: dfine's format
-            
-            # are these relevant?
-                # use_focal_loss: True
-                # eval_spatial_size: [640, 640] # h w
+            results = postprocessor(preds, orig_target_sizes.to(device))
 
         # Loss
+        compute_loss = False    # for now
         if compute_loss:
+            # preds format: y = torch.cat((dbox, cls.sigmoid()), 1)
             loss += compute_loss((preds, d_ddetect), targets)[1]  # box, obj, cls
 
         # NMS
@@ -222,9 +224,9 @@ def run(
             preds['pred_boxes'] = preds['pred_boxes'].permute(0, 2, 1)
             preds = torch.cat((preds['pred_boxes'], preds['pred_logits'].sigmoid()), 1) # 4 + 80
             
-            # preds b4 nms torch.Size([64, 84, 300])
-            # the format of preds?
-            preds = non_max_suppression(preds,   # originally preds
+            # preds b4 nms torch.Size([64, 84, 300])    (originally [64, 84, 5292])
+            # preds format: torch.cat((dbox, cls.sigmoid()), 1) # 4 + 80
+            preds = non_max_suppression(preds,
                                         conf_thres,
                                         iou_thres,
                                         labels=lb,
@@ -236,10 +238,7 @@ def run(
             
             # preds.len 64
             # p (preds[0].shape)  # all [300, 6], why?  # [xyxy, conf, cls]
-        
-        for pred_sample in preds:
-            for i in range(300):
-                print(pred_sample[i, :4])  # xyxy
+    
             
         # Metrics
         for si, pred in enumerate(preds):   # preds should be in yolo's format!

@@ -310,23 +310,23 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         print('training')
 
         # training should be fine as I just copied dfine's training function
-        train_one_epoch(
-                model,  # Model, smart_DDP
-                DF.criterion,
-                DFtrain_dataloader,
-                optimizer,  # yolo opt for now
-                device,
-                epoch,
-                max_norm=DF.clip_max_norm,
-                print_freq=DF.print_freq,
-                ema=DFema,  # depends on model  
-                # scaler=DF.scaler, # disable amp
-                lr_warmup_scheduler=DFlr_warmup_scheduler,
-                writer=DF.writer
-        )
-        print('training finished!')
-        if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
-            DFlr_scheduler.step()
+        # train_one_epoch(
+        #         model,  # Model, smart_DDP
+        #         DF.criterion,
+        #         DFtrain_dataloader,
+        #         optimizer,  # yolo opt for now
+        #         device,
+        #         epoch,
+        #         max_norm=DF.clip_max_norm,
+        #         print_freq=DF.print_freq,
+        #         ema=DFema,  # depends on model  
+        #         # scaler=DF.scaler, # disable amp
+        #         lr_warmup_scheduler=DFlr_warmup_scheduler,
+        #         writer=DF.writer
+        # )
+        # print('training finished!')
+        # if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
+        #     DFlr_scheduler.step()
 
         # for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
         #     callbacks.run('on_train_batch_start')
@@ -410,17 +410,18 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             # ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])   # model to ema
             final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
             if not noval or final_epoch:  # Calculate mAP
-                results, maps, _ = validate.run(data_dict,
-                                                batch_size=batch_size // WORLD_SIZE * 2,
-                                                imgsz=imgsz,
-                                                half=amp,
-                                                model=DFema.module,  # is this correct?
-                                                single_cls=single_cls,
-                                                dataloader=val_loader,
-                                                save_dir=save_dir,
-                                                plots=False,
-                                                callbacks=callbacks,
-                                                compute_loss=compute_loss)
+                # results, maps, _ = validate.run(data_dict,
+                #                                 batch_size=batch_size // WORLD_SIZE * 2,
+                #                                 imgsz=imgsz,
+                #                                 half=amp,
+                #                                 model=DFema.module,  # is this correct?
+                #                                 single_cls=single_cls,
+                #                                 dataloader=val_loader,
+                #                                 save_dir=save_dir,
+                #                                 plots=False,
+                #                                 callbacks=callbacks,
+                #                                 compute_loss=compute_loss)
+                pass
                 
                 
 
