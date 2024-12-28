@@ -178,6 +178,7 @@ class ComputeLoss:
         # but the size should be the same
         dtype = pred_scores.dtype
         batch_size, grid_size = pred_scores.shape[:2]
+        # use d to compute igsz, is this correct?
         imgsz = torch.tensor(d_ddetect[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
         anchor_points, stride_tensor = make_anchors(d_ddetect, self.stride, 0.5)
 

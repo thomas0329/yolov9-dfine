@@ -123,7 +123,7 @@ class DDetect(nn.Module):   # this
         
         box, cls = torch.cat([di.view(shape[0], self.no, -1) for di in d], 2).split((self.reg_max * 4, self.nc), 1)
 
-        # print('strides', self.strides)  # all zero!
+        
         dbox = dist2bbox(self.dfl(box), self.anchors.unsqueeze(0), xywh=True, dim=1) * self.strides
         y = torch.cat((dbox, cls.sigmoid()), 1)
 
@@ -132,8 +132,7 @@ class DDetect(nn.Module):   # this
             # dbox [1, 4, 300]
         dbox = dbox.permute(0, 2, 1)    # [1, 300, 4]
 
-        return dbox, d
-
+        return dbox, d  # xywh
         
         # return y if self.export else (y, x)
 

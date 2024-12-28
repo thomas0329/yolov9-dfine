@@ -21,6 +21,7 @@ from D_FINE.src.misc import dist_utils
 from torch.optim.lr_scheduler import MultiStepLR
 from D_FINE.src.optim import LinearWarmup
 from D_FINE.src.solver.det_engine import evaluate
+from models.common import DetectMultiBackend
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # root directory
@@ -120,6 +121,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         csd = intersect_dicts(csd, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(csd, strict=False)  # load
         LOGGER.info(f'Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
+        # 852/1106 items
     else:
         model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
         model.model[22].pre_bbox_head.training = True
@@ -165,13 +167,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     # EMA
     # ema = ModelEMA(model) if RANK in {-1, 0} else None
     DFema = ModelEMA(model=model, decay=0.9999, warmups=1000, start=0)
-
-    # DF ema
-    # ema:
-    #     type: ModelEMA
-    #     decay: 0.9999
-    #     warmups: 1000
-    #     start: 0
 
     # Resume
     best_fitness, start_epoch = 0.0, 0
@@ -314,34 +309,24 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         optimizer.zero_grad()
         print('training')
 
-        
-
-        # train_stats, model, DFema = train_one_epoch(
-        #         model,  # Model, smart_DDP
-        #         DF.criterion,
-        #         DFtrain_dataloader,
-        #         optimizer,  # yolo opt for now
-        #         device,
-        #         epoch,
-        #         max_norm=DF.clip_max_norm,
-        #         print_freq=DF.print_freq,
-        #         ema=DFema,  # depends on model  
-        #         # scaler=DF.scaler, # disable amp
-        #         lr_warmup_scheduler=DFlr_warmup_scheduler,
-        #         writer=DF.writer
-        # )
-        # print('training finished!')
-        # if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
-        #     DFlr_scheduler.step()
-
-        # test_stats, coco_evaluator = evaluate(
-        #     DFema,
-        #     DF.criterion,
-        #     DF.postprocessor,
-        #     DFval_dataloader,
-        #     DF.evaluator,
-        #     device
-        # )
+        # training should be fine as I just copied dfine's training function
+        train_one_epoch(
+                model,  # Model, smart_DDP
+                DF.criterion,
+                DFtrain_dataloader,
+                optimizer,  # yolo opt for now
+                device,
+                epoch,
+                max_norm=DF.clip_max_norm,
+                print_freq=DF.print_freq,
+                ema=DFema,  # depends on model  
+                # scaler=DF.scaler, # disable amp
+                lr_warmup_scheduler=DFlr_warmup_scheduler,
+                writer=DF.writer
+        )
+        print('training finished!')
+        if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
+            DFlr_scheduler.step()
 
         # for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
         #     callbacks.run('on_train_batch_start')
@@ -369,12 +354,24 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
         #     # Forward
         #     with torch.cuda.amp.autocast(amp):
-        #         pred = model(imgs)  # forward, pred is originally "d"
-        #         loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
-        #         if RANK != -1:
-        #             loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
-        #         if opt.quad:
-        #             loss *= 4.
+
+        #         outputs, _ = model(samples, targets=targets)
+        #         # out, dual_out
+        #         loss_dict = criterion(outputs, targets, **metas)
+
+        #         loss : torch.Tensor = sum(loss_dict.values())
+        #         optimizer.zero_grad()
+        #         loss.backward()
+
+        #         if DF.clip_max_norm > 0:
+        #             torch.nn.utils.clip_grad_norm_(model.parameters(), DF.clip_max_norm)
+                
+        #         # pred = model(imgs)  # forward, pred is originally "d"
+        #         # loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
+        #         # if RANK != -1:
+        #         #     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
+        #         # if opt.quad:
+        #         #     loss *= 4.
 
         #     # Backward
         #     scaler.scale(loss).backward()
@@ -413,7 +410,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             # ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])   # model to ema
             final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
             if not noval or final_epoch:  # Calculate mAP
-                
                 results, maps, _ = validate.run(data_dict,
                                                 batch_size=batch_size // WORLD_SIZE * 2,
                                                 imgsz=imgsz,
@@ -425,7 +421,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                                 plots=False,
                                                 callbacks=callbacks,
                                                 compute_loss=compute_loss)
-                print('validation finished!')
+                
+                
 
             # Update best mAP
             fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
@@ -469,10 +466,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         # end epoch ----------------------------------------------------------------------------------------------------
     # end training -----------------------------------------------------------------------------------------------------
 
-    # load weights
-    print('load weights')
-    model = DetectMultiBackend('./runs/train/gelan-c61/weights/best.pt', device=device, dnn=False, data='./data/coco.yaml', fp16=half)
-    model.eval()
+    # load weights: load weights trained yesterday!
+    # print('load my pretrained weights')
+    # model = DetectMultiBackend('runs/train/gelan-c105/weights/best.pt', device=device, dnn=False, data='./data/coco.yaml', fp16=False)
+    # model.eval()
 
     if RANK in {-1, 0}:
         LOGGER.info(f'\n{epoch - start_epoch + 1} epochs completed in {(time.time() - t0) / 3600:.3f} hours.')
@@ -724,4 +721,7 @@ if __name__ == "__main__":
 
     # the model should be able to reach mAP=0.4 after 6 to 15 epochs of training
     # performance should at least be "normal" 
+
+    # findings:
+    
     

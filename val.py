@@ -72,6 +72,7 @@ def process_batch(detections, labels, iouv):
             correct[matches[:, 1].astype(int), i] = True
     return torch.tensor(correct, dtype=torch.bool, device=iouv.device)
 
+from D_FINE.src.zoo.dfine.postprocessor import DFINEPostProcessor
 
 @smart_inference_mode()
 def run(
@@ -105,6 +106,8 @@ def run(
         callbacks=Callbacks(),
         compute_loss=None,
 ):
+    
+    postprocessor = DFINEPostProcessor(use_focal_loss=True, num_classes=80, num_top_queries=300)
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
@@ -194,12 +197,15 @@ def run(
             nb, _, height, width = im.shape  # batch size, channels, height, width
 
         # Inference
-        # compute_loss is given
         # model.model[22].pre_bbox_head.training = True
         # model.model[22].training = True # dfinetransformer
         with dt[1]: # out, main_d_ddetect. orginally: (y, x), y: dbox & cls
             (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)
             # preds: dfine's format
+            
+            # are these relevant?
+                # use_focal_loss: True
+                # eval_spatial_size: [640, 640] # h w
 
         # Loss
         if compute_loss:
@@ -210,15 +216,31 @@ def run(
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         with dt[2]:
             # preds format conversion has to be finished!
-            preds = non_max_suppression(preds,
+            # preds before NMS: # [32, 84, 7056]
+            # dict_keys(['pred_logits', 'pred_boxes', 'pred_corners'])
+            preds['pred_logits'] = preds['pred_logits'].permute(0, 2, 1)
+            preds['pred_boxes'] = preds['pred_boxes'].permute(0, 2, 1)
+            preds = torch.cat((preds['pred_boxes'], preds['pred_logits'].sigmoid()), 1) # 4 + 80
+            
+            # preds b4 nms torch.Size([64, 84, 300])
+            # the format of preds?
+            preds = non_max_suppression(preds,   # originally preds
                                         conf_thres,
                                         iou_thres,
                                         labels=lb,
                                         multi_label=True,
                                         agnostic=single_cls,
                                         max_det=max_det, 
-                                        device=device)  # added
-
+                                        )
+            # print('preds', preds)   # not really all zero
+            
+            # preds.len 64
+            # p (preds[0].shape)  # all [300, 6], why?  # [xyxy, conf, cls]
+        
+        for pred_sample in preds:
+            for i in range(300):
+                print(pred_sample[i, :4])  # xyxy
+            
         # Metrics
         for si, pred in enumerate(preds):   # preds should be in yolo's format!
             labels = targets[targets[:, 0] == si, 1:]
@@ -298,12 +320,15 @@ def run(
     if save_json and len(jdict):
         w = Path(weights[0] if isinstance(weights, list) else weights).stem if weights is not None else ''  # weights
         anno_json = str(Path(data.get('path', '../coco')) / 'annotations/instances_val2017.json')  # annotations json
+        print('anno_json', anno_json)
         pred_json = str(save_dir / f"{w}_predictions.json")  # predictions json
+        print('pred_json', pred_json)   # why is bounding box all 0 in pred.json?
         LOGGER.info(f'\nEvaluating pycocotools mAP... saving {pred_json}...')
         with open(pred_json, 'w') as f:
             json.dump(jdict, f)
 
         try:  # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
+            
             check_requirements('pycocotools')
             from pycocotools.coco import COCO
             from pycocotools.cocoeval import COCOeval
