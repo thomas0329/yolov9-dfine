@@ -682,7 +682,7 @@ class LoadImagesAndLabels(torchvision.datasets.CocoDetection, Dataset):
 
         else:
             # Load image
-            img, (h0, w0), (h, w) = self.load_image(index)
+            img, (h0, w0), (h, w) = self.load_image(index)  # # im, hw_original, hw_resized
 
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
@@ -738,7 +738,7 @@ class LoadImagesAndLabels(torchvision.datasets.CocoDetection, Dataset):
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         img = np.ascontiguousarray(img)
 
-        return torch.from_numpy(img), labels_out, self.im_files[index], shapes
+        return torch.from_numpy(img), labels_out, self.im_files[index], shapes  # (h0, w0), ((h / h0, w / w0), pad)
         # imgs, targets, paths, _
 
     def load_image(self, i):

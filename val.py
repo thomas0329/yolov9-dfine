@@ -183,12 +183,11 @@ def run(
     pbar = tqdm(dataloader, desc=s, bar_format=TQDM_BAR_FORMAT)  # progress bar
 
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):   # yolo loader
-        # im [64, 3, 416, 672]
-        batch_sz = im.shape[0]
-        orig_target_sizes = im.shape[2:]
-        orig_target_sizes = torch.tensor([im.shape[2], im.shape[3]])
-        orig_target_sizes = orig_target_sizes.repeat(batch_sz, 1)   # torch.Size([b, 2])
-
+        # im has different shape across batches!
+        # shapes (h0, w0), should be reversed!
+        # torch.tensor([640, 425])
+        orig_target_sizes = [torch.tensor([shape[0][1], shape[0][0]]) for shape in shapes]
+        orig_target_sizes = torch.stack(orig_target_sizes, dim=0)
         callbacks.run('on_val_batch_start')
         with dt[0]:
             if cuda:
