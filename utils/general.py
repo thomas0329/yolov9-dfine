@@ -826,6 +826,8 @@ def resample_segments(segments, n=1000):
 
 
 def scale_boxes(img1_shape, boxes, img0_shape, ratio_pad=None):
+    # img1_shape: shape of each image in a batch
+    # img0_shape: original shape
     # Rescale boxes (xyxy) from img1_shape to img0_shape
     if ratio_pad is None:  # calculate from img0_shape
         gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
@@ -884,7 +886,7 @@ def clip_segments(segments, shape):
 from D_FINE.src.zoo.dfine.postprocessor import DFINEPostProcessor
 
 def non_max_suppression(
-        preds,
+        prediction,
         conf_thres=0.25,
         iou_thres=0.45,
         classes=None,
@@ -901,12 +903,7 @@ def non_max_suppression(
     Returns:
          list of detections, on (n,6) tensor per image [xyxy, conf, cls]
     """
-    postprocessor = DFINEPostProcessor(use_focal_loss=True, num_classes=80, num_top_queries=300)
-    results = postprocessor(preds, orig_target_sizes.to(device))
-
-    boxes = results['boxes'].permute(0, 2, 1)
-    logits = results['logits'].permute(0, 2, 1)
-    prediction = torch.cat((boxes, logits), 1) # 4 + 80
+    
     
     # if isinstance(prediction, (list, tuple)):  # YOLO model in validation model, output = (inference_out, loss_out)
     #     prediction = prediction[0]  # select only inference output

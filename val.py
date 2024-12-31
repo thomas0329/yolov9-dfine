@@ -36,6 +36,7 @@ def save_one_txt(predn, save_conf, shape, file):
 
 
 def save_one_json(predn, jdict, path, class_map):
+    # predn: each pred [84, 300]    # 4 + 80
     # Save one JSON result {"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}
     image_id = int(path.stem) if path.stem.isnumeric() else path.stem
     box = xyxy2xywh(predn[:, :4])  # xywh
@@ -45,7 +46,7 @@ def save_one_json(predn, jdict, path, class_map):
             'image_id': image_id,
             'category_id': class_map[int(p[5])],
             'bbox': [round(x, 3) for x in b],
-            'score': round(p[4], 5)})
+            'score': round(p[4], 5)})   # what's this? why is it always so low?
 
 
 def process_batch(detections, labels, iouv):
@@ -72,7 +73,8 @@ def process_batch(detections, labels, iouv):
             correct[matches[:, 1].astype(int), i] = True
     return torch.tensor(correct, dtype=torch.bool, device=iouv.device)
 
-
+from D_FINE.src.zoo.dfine.postprocessor import DFINEPostProcessor
+from D_FINE.src.misc import MetricLogger
 
 @smart_inference_mode()
 def run(
@@ -105,8 +107,10 @@ def run(
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
-):
-    
+        coco_evaluator=None
+):  
+
+    postprocessor = DFINEPostProcessor(use_focal_loss=True, num_classes=80, num_top_queries=300)
     
     # Initialize/load model and set device
     training = model is not None
@@ -182,12 +186,16 @@ def run(
     callbacks.run('on_val_start')
     pbar = tqdm(dataloader, desc=s, bar_format=TQDM_BAR_FORMAT)  # progress bar
 
+
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):   # yolo loader
-        # im has different shape across batches!
-        # shapes (h0, w0), should be reversed!
+        # im loaded by yolo loader ([1, 3, 448, 672])
+        # shapes [[[426, 640], [[1.0, 1.0], [16.0, 11.0]]]]
+        # print('im', im.shape)   im torch.Size([64, 3, 448, 672])
+        # im has different shape across batches
         # torch.tensor([640, 425])
         orig_target_sizes = [torch.tensor([shape[0][1], shape[0][0]]) for shape in shapes]
         orig_target_sizes = torch.stack(orig_target_sizes, dim=0)
+        # orig_target_sizes tensor([[640, 426]], correct!
         callbacks.run('on_val_batch_start')
         with dt[0]:
             if cuda:
@@ -195,7 +203,7 @@ def run(
                 targets = targets.to(device)
             # im = im.half() if half else im.float()  # uint8 to fp16/32
             im = im.float()  # uint8 to fp16/32
-            im /= 255  # 0 - 255 to 0.0 - 1.0
+            # im /= 255  # 0 - 255 to 0.0 - 1.0   # will this be the problem?
             nb, _, height, width = im.shape  # batch size, channels, height, width
 
         # Inference
@@ -205,9 +213,13 @@ def run(
             (preds, d_ddetect) = model(im)  # for now
             # (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)
             # print('preds', preds.keys())    # preds dict_keys(['pred_logits', 'pred_boxes', 'pred_corners'])
-        
-        # sigged logits torch.Size([64, 300, 80])
 
+        results = postprocessor(preds, orig_target_sizes.to(device), return_logits=True)
+        boxes = results['boxes'].permute(0, 2, 1)
+        logits = results['logits'].permute(0, 2, 1)
+        preds = torch.cat((boxes, logits), 1) # 4 + 80
+        # preds should be in yolo format! xywh
+        
         # Loss
         compute_loss = False    # for now
         if compute_loss:
@@ -224,6 +236,8 @@ def run(
             
             # preds b4 nms torch.Size([64, 84, 300])    (originally [64, 84, 5292])
             # preds format: torch.cat((dbox, cls.sigmoid()), 1) # 4 + 80
+            # BOX FORMAT: xywh. is it normalized?
+            # but dfine postprocessed out is xyxy (absolute distance)
             preds = non_max_suppression(preds,
                                         conf_thres,
                                         iou_thres,
@@ -245,6 +259,7 @@ def run(
             labels = targets[targets[:, 0] == si, 1:]
             nl, npr = labels.shape[0], pred.shape[0]  # number of labels, predictions
             path, shape = Path(paths[si]), shapes[si][0]
+            # shapes [[[426, 640], [[1.0, 1.0], [16.0, 11.0]]]]
             correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)  # init
             seen += 1
 
@@ -319,9 +334,7 @@ def run(
     if save_json and len(jdict):
         w = Path(weights[0] if isinstance(weights, list) else weights).stem if weights is not None else ''  # weights
         anno_json = str(Path(data.get('path', '../coco')) / 'annotations/instances_val2017.json')  # annotations json
-        print('anno_json', anno_json)
         pred_json = str(save_dir / f"{w}_predictions.json")  # predictions json
-        print('pred_json', pred_json)   # why is bounding box all 0 in pred.json?
         LOGGER.info(f'\nEvaluating pycocotools mAP... saving {pred_json}...')
         with open(pred_json, 'w') as f:
             json.dump(jdict, f)

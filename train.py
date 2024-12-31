@@ -324,7 +324,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         #         lr_warmup_scheduler=DFlr_warmup_scheduler,
         #         writer=DF.writer
         # )
-        # print('training finished!')
         # if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
         #     DFlr_scheduler.step()
 
@@ -470,7 +469,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     # end training -----------------------------------------------------------------------------------------------------
 
     print('load my pretrained weights')
-    model = DetectMultiBackend('best_postprocessing.pt', device=device, dnn=False, data='./data/coco.yaml', fp16=False)
+    model = DetectMultiBackend('runs/train/gelan-c169/weights/best.pt', device=device, dnn=False, data='./data/coco.yaml', fp16=False)
     model.eval()
 
     if RANK in {-1, 0}:
@@ -496,10 +495,12 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                         verbose=True,
                         plots=plots,
                         callbacks=callbacks,
-                        compute_loss=compute_loss)  # val best model with plots
+                        compute_loss=compute_loss, 
+                        coco_evaluator=DF.evaluator
+                        )  # val best model with plots
 
-                    # test_stats, coco_evaluator = evaluate(DFema.module, DF.criterion, DF.postprocessor,
-                    # DFval_dataloader, DF.evaluator, device)
+                    test_stats, coco_evaluator = evaluate(DFema.module, DF.criterion, DF.postprocessor,
+                    DFval_dataloader, DF.evaluator, device)
 
                     if is_coco:
                         callbacks.run('on_fit_epoch_end', list(mloss) + list(results) + lr, epoch, best_fitness, fi)

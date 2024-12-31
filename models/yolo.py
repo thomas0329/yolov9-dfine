@@ -105,7 +105,7 @@ class DDetect(nn.Module):   # this
 
     def forward(self, x):
 
-        # print('ddetect input', x) # torch.Size([b, 300, 512])
+        # print('ddetect input', x.shape) # torch.Size([b, 300, 512])
         x = x.transpose(1, 2)   # [b, 512, 300]
         bs = x.shape[0]
         x = x.reshape(bs, 512, -1, 1)   # [b, 512, 300, 1]
@@ -131,7 +131,7 @@ class DDetect(nn.Module):   # this
             # return x
             # dbox [1, 4, 300]
         dbox = dbox.permute(0, 2, 1)    # [1, 300, 4]
-
+        # print('dbox', dbox.shape)
         return dbox, d  # xywh
         
         # return y if self.export else (y, x)
