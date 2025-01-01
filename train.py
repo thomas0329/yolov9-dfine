@@ -483,21 +483,21 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 if f is best:
                     LOGGER.info(f'\nValidating {f}...')
                     # plot at the end of training
-                    results, _, _ = validate.run(
-                        data_dict,
-                        batch_size=batch_size // WORLD_SIZE * 2,
-                        imgsz=imgsz,
-                        model=attempt_load(f, device).half(),
-                        single_cls=single_cls,
-                        dataloader=val_loader,
-                        save_dir=save_dir,
-                        save_json=is_coco,
-                        verbose=True,
-                        plots=plots,
-                        callbacks=callbacks,
-                        compute_loss=compute_loss, 
-                        coco_evaluator=DF.evaluator
-                        )  # val best model with plots
+                    # results, _, _ = validate.run(
+                    #     data_dict,
+                    #     batch_size=batch_size // WORLD_SIZE * 2,
+                    #     imgsz=imgsz,
+                    #     model=attempt_load(f, device).half(),
+                    #     single_cls=single_cls,
+                    #     dataloader=val_loader,
+                    #     save_dir=save_dir,
+                    #     save_json=is_coco,
+                    #     verbose=True,
+                    #     plots=plots,
+                    #     callbacks=callbacks,
+                    #     compute_loss=compute_loss, 
+                    #     coco_evaluator=DF.evaluator
+                    #     )  # val best model with plots
 
                     test_stats, coco_evaluator = evaluate(DFema.module, DF.criterion, DF.postprocessor,
                     DFval_dataloader, DF.evaluator, device)

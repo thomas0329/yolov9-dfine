@@ -104,11 +104,18 @@ class DDetect(nn.Module):   # this
         self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
 
     def forward(self, x):
+        
+        # ddetect input shape is not fixed
 
+        # [8, 456, 512]
+        # ddetect input torch.Size([1, 300, 512])
         # print('ddetect input', x.shape) # torch.Size([b, 300, 512])
         x = x.transpose(1, 2)   # [b, 512, 300]
         bs = x.shape[0]
-        x = x.reshape(bs, 512, -1, 1)   # [b, 512, 300, 1]
+        
+        x = x.reshape(bs, 512, 20, 15)   # [b, 512, 300, 1]
+        
+
         shape = x.shape  # BCHW
         d = []
         for i in range(self.nl):
@@ -123,7 +130,8 @@ class DDetect(nn.Module):   # this
         
         box, cls = torch.cat([di.view(shape[0], self.no, -1) for di in d], 2).split((self.reg_max * 4, self.nc), 1)
 
-        
+        # assert False, self.dfl(box).device  # cpu
+        # assert False, self.anchors.device   # cpu
         dbox = dist2bbox(self.dfl(box), self.anchors.unsqueeze(0), xywh=True, dim=1) * self.strides
         y = torch.cat((dbox, cls.sigmoid()), 1)
 
