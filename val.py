@@ -35,11 +35,14 @@ def save_one_txt(predn, save_conf, shape, file):
             f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
 
+
+
+
 def save_one_json(predn, jdict, path, class_map):
     # predn: each pred [84, 300]    # 4 + 80
     # Save one JSON result {"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}
     image_id = int(path.stem) if path.stem.isnumeric() else path.stem
-    box = xyxy2xywh(predn[:, :4])  # xywh
+    box = xyxy2xywh(predn[:, :4])  # cxcywh
     box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
     for p, b in zip(predn.tolist(), box.tolist()):
         jdict.append({
@@ -107,7 +110,8 @@ def run(
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
-        coco_evaluator=None
+        coco_evaluator=None,
+        DFjdict=None
 ):  
 
     postprocessor = DFINEPostProcessor(use_focal_loss=True, num_classes=80, num_top_queries=300)
@@ -253,7 +257,7 @@ def run(
             # preds.len 64
             # p (preds[0].shape)  # all [300, 6], why?  # [xyxy, conf, cls]
     
-            
+        
         # Metrics
         for si, pred in enumerate(preds):   # preds should be in yolo's format!
             labels = targets[targets[:, 0] == si, 1:]
@@ -331,10 +335,12 @@ def run(
         callbacks.run('on_val_end', nt, tp, fp, p, r, f1, ap, ap50, ap_class, confusion_matrix)
 
     # Save JSON
+    if DFjdict != None:
+        jdict = DFjdict
     if save_json and len(jdict):
         w = Path(weights[0] if isinstance(weights, list) else weights).stem if weights is not None else ''  # weights
         anno_json = str(Path(data.get('path', '../coco')) / 'annotations/instances_val2017.json')  # annotations json
-        pred_json = str(save_dir / f"{w}_predictions.json")  # predictions json
+        pred_json = str(save_dir / f"_predictions.json")  # predictions json
         LOGGER.info(f'\nEvaluating pycocotools mAP... saving {pred_json}...')
         with open(pred_json, 'w') as f:
             json.dump(jdict, f)

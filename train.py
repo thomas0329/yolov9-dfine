@@ -198,7 +198,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     )
     # DFlr_scheduler = DF.lr_scheduler    # should depend on opt
     DFscalar = DF.scaler
-    DFlr_scheduler = MultiStepLR(optimizer=optimizer, milestones=[500], gamma=0.1)
+    DFlr_scheduler = MultiStepLR(optimizer=optimizer, milestones=[2], gamma=0.1)
     DFlr_warmup_scheduler = LinearWarmup(lr_scheduler=DFlr_scheduler, warmup_duration=500)      # depends on lr_scheduler
     
     os.chdir("../")
@@ -310,22 +310,22 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         print('training')
 
         # training should be fine as I just copied dfine's training function
-        # train_one_epoch(
-        #         model,  # Model, smart_DDP
-        #         DF.criterion,
-        #         DFtrain_dataloader,
-        #         optimizer,  # yolo opt for now
-        #         device,
-        #         epoch,
-        #         max_norm=DF.clip_max_norm,
-        #         print_freq=DF.print_freq,
-        #         ema=DFema,  # depends on model  
-        #         # scaler=DF.scaler, # disable amp
-        #         lr_warmup_scheduler=DFlr_warmup_scheduler,
-        #         writer=DF.writer
-        # )
-        # if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
-        #     DFlr_scheduler.step()
+        train_one_epoch(
+                model,  # Model, smart_DDP
+                DF.criterion,
+                DFtrain_dataloader,
+                optimizer,  # yolo opt for now
+                device,
+                epoch,
+                max_norm=DF.clip_max_norm,
+                print_freq=DF.print_freq,
+                ema=DFema,  # depends on model  
+                # scaler=DF.scaler, # disable amp
+                lr_warmup_scheduler=DFlr_warmup_scheduler,
+                writer=DF.writer
+        )
+        if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
+            DFlr_scheduler.step()
 
         # for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
         #     callbacks.run('on_train_batch_start')
@@ -409,21 +409,23 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             # ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])   # model to ema
             final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
             if not noval or final_epoch:  # Calculate mAP
-                # results, maps, _ = validate.run(data_dict,
-                #                                 batch_size=batch_size // WORLD_SIZE * 2,
-                #                                 imgsz=imgsz,
-                #                                 half=amp,
-                #                                 model=DFema.module,  # is this correct?
-                #                                 single_cls=single_cls,
-                #                                 dataloader=val_loader,
-                #                                 save_dir=save_dir,
-                #                                 plots=False,
-                #                                 callbacks=callbacks,
-                #                                 compute_loss=compute_loss)
-
+            
                 # module = self.ema.module if self.ema else self.model
-                # test_stats, coco_evaluator = evaluate(DFema.module, DF.criterion, DF.postprocessor,
-                #     DFval_dataloader, DF.evaluator, device)
+                coco_evaluator, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
+                    DFval_dataloader, DF.evaluator, device)
+
+                results, maps, _ = validate.run(data_dict,
+                                            batch_size=batch_size // WORLD_SIZE * 2,
+                                            imgsz=imgsz,
+                                            half=amp,
+                                            model=DFema.module,  # is this correct?
+                                            single_cls=single_cls,
+                                            dataloader=val_loader,
+                                            save_dir=save_dir,
+                                            plots=False,
+                                            callbacks=callbacks,
+                                            compute_loss=compute_loss,
+                                            DFjdict=DFjdict)
                 pass
 
             # Update best mAP
@@ -468,9 +470,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         # end epoch ----------------------------------------------------------------------------------------------------
     # end training -----------------------------------------------------------------------------------------------------
 
-    print('load my pretrained weights')
-    model = DetectMultiBackend('runs/train/gelan-c169/weights/best.pt', device=device, dnn=False, data='./data/coco.yaml', fp16=False)
-    model.eval()
+    # print('load my pretrained weights')
+    # model = DetectMultiBackend('runs/train/gelan-c169/weights/best.pt', device=device, dnn=False, data='./data/coco.yaml', fp16=False)
+    # model.eval()
 
     if RANK in {-1, 0}:
         LOGGER.info(f'\n{epoch - start_epoch + 1} epochs completed in {(time.time() - t0) / 3600:.3f} hours.')
@@ -483,24 +485,22 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 if f is best:
                     LOGGER.info(f'\nValidating {f}...')
                     # plot at the end of training
-                    # results, _, _ = validate.run(
-                    #     data_dict,
-                    #     batch_size=batch_size // WORLD_SIZE * 2,
-                    #     imgsz=imgsz,
-                    #     model=attempt_load(f, device).half(),
-                    #     single_cls=single_cls,
-                    #     dataloader=val_loader,
-                    #     save_dir=save_dir,
-                    #     save_json=is_coco,
-                    #     verbose=True,
-                    #     plots=plots,
-                    #     callbacks=callbacks,
-                    #     compute_loss=compute_loss, 
-                    #     coco_evaluator=DF.evaluator
-                    #     )  # val best model with plots
-
-                    test_stats, coco_evaluator = evaluate(DFema.module, DF.criterion, DF.postprocessor,
+                    coco_evaluator, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
                     DFval_dataloader, DF.evaluator, device)
+
+                    results, maps, _ = validate.run(data_dict,
+                                                batch_size=batch_size // WORLD_SIZE * 2,
+                                                imgsz=imgsz,
+                                                half=amp,
+                                                model=DFema.module,  # is this correct?
+                                                single_cls=single_cls,
+                                                dataloader=val_loader,
+                                                save_dir=save_dir,
+                                                save_json=True, 
+                                                plots=False,
+                                                callbacks=callbacks,
+                                                compute_loss=compute_loss,
+                                                DFjdict=DFjdict)
 
                     if is_coco:
                         callbacks.run('on_fit_epoch_end', list(mloss) + list(results) + lr, epoch, best_fitness, fi)
