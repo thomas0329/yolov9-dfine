@@ -131,10 +131,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info(f'Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
         # 852/1106 items
     else:
-        DF, DFpretrained_model = dfine()
-        model = DFpretrained_model
-        # model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-        # model.model[22].pre_bbox_head.training = True
+        model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        model.model[22].pre_bbox_head.training = True
     amp = check_amp(model)  # check AMP
 
     # Freeze
@@ -151,14 +149,15 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     # imgsz = check_img_size(opt.imgsz, gs, floor=gs * 2)  # verify imgsz is gs-multiple
 
     # Batch size
-    # if RANK == -1 and batch_size == -1:  # single-GPU only, estimate best batch size
+    if RANK == -1 and batch_size == -1:  # single-GPU only, estimate best batch size
         # batch_size = check_train_batch_size(model, imgsz, amp)
         # loggers.on_params_update({"batch_size": batch_size})
+        pass
 
     # Optimizer
     nbs = 64  # nominal batch size
-    # accumulate = max(round(nbs / batch_size), 1)  # accumulate loss before optimizing
-    # hyp['weight_decay'] *= batch_size * accumulate / nbs  # scale weight_decay
+    accumulate = max(round(nbs / batch_size), 1)  # accumulate loss before optimizing
+    hyp['weight_decay'] *= batch_size * accumulate / nbs  # scale weight_decay
     optimizer = smart_optimizer(model, opt.optimizer, hyp['lr0'], hyp['momentum'], hyp['weight_decay'])
 
     # Scheduler
@@ -172,7 +171,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         lf = lambda x: (1 - x / epochs) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear
 
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
-    # from utils.plots import plot_lr_scheduler; plot_lr_scheduler(optimizer, scheduler, epochs)
+    from utils.plots import plot_lr_scheduler; plot_lr_scheduler(optimizer, scheduler, epochs)
 
     # EMA
     # ema = ModelEMA(model) if RANK in {-1, 0} else None
@@ -195,6 +194,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
         LOGGER.info('Using SyncBatchNorm()')
 
+    DF = dfine()
 
     DFtrain_dataloader = dist_utils.warp_loader( # deal w DDP
         DF.train_dataloader, shuffle=DF.train_dataloader.shuffle
@@ -315,22 +315,22 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         optimizer.zero_grad()
 
         # training should be fine as I just copied dfine's training function
-        # train_one_epoch(
-        #         model,  # Model, smart_DDP
-        #         DF.criterion,
-        #         DFtrain_dataloader,
-        #         optimizer,  # yolo opt for now
-        #         device,
-        #         epoch,
-        #         max_norm=DF.clip_max_norm,
-        #         print_freq=DF.print_freq,
-        #         ema=DFema,  # depends on model  
-        #         # scaler=DF.scaler, # disable amp
-        #         lr_warmup_scheduler=DFlr_warmup_scheduler,
-        #         writer=DF.writer
-        # )
-        # if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
-        #     DFlr_scheduler.step()
+        train_one_epoch(
+                model,  # Model, smart_DDP
+                DF.criterion,
+                DFtrain_dataloader,
+                optimizer,  # yolo opt for now
+                device,
+                epoch,
+                max_norm=DF.clip_max_norm,
+                print_freq=DF.print_freq,
+                ema=DFema,  # depends on model  
+                # scaler=DF.scaler, # disable amp
+                lr_warmup_scheduler=DFlr_warmup_scheduler,
+                writer=DF.writer
+        )
+        if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
+            DFlr_scheduler.step()
 
         # for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
         #     callbacks.run('on_train_batch_start')
@@ -416,8 +416,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             if not noval or final_epoch:  # Calculate mAP
             
                 # module = self.ema.module if self.ema else self.model
-                # coco_evaluator, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
-                #     DFval_dataloader, DF.evaluator, device)
+                _, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
+                    DFval_dataloader, DF.evaluator, device)
+
+                yolo_coco_val(DFjdict, data_dict, save_dir, is_coco, DFval_dataloader)
 
                 # results, maps, _ = validate.run(data_dict,
                 #                             batch_size=batch_size // WORLD_SIZE * 2,
@@ -490,7 +492,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 if f is best:
                     LOGGER.info(f'\nValidating {f}...')
                     # plot at the end of training
-                    coco_evaluator, DFjdict = evaluate(DFpretrained_model, DF.criterion, DF.postprocessor,
+                    _, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
                     DFval_dataloader, DF.evaluator, device)
 
                     yolo_coco_val(DFjdict, data_dict, save_dir, is_coco, DFval_dataloader)

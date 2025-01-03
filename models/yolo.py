@@ -883,10 +883,10 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
     # print("Current Working Directory:", os.getcwd())
 
     # cfg.model.decoder, cfg.train_dataloader
-    DF, _ = dfine()
+    DF = dfine()
     DFdec = DF.model.decoder
     DFdec.f = [15, 18, 21]  # check this
-    DFdec.pre_bbox_head = layers[-1]    # DualDDetect
+    # DFdec.pre_bbox_head = layers[-1]    # DDetect
     
     layers.pop()
     layers.append(DFdec)
@@ -925,18 +925,18 @@ def dfine() -> None:
         if 'HGNetv2' in cfg.yaml_cfg:
             cfg.yaml_cfg['HGNetv2']['pretrained'] = False
 
-    solver = TASKS[cfg.yaml_cfg['task']](cfg)
+    # solver = TASKS[cfg.yaml_cfg['task']](cfg)
 
-    if args.test_only:
-        DFpretrained_model = solver.val()
-    else:
-        solver.fit()
+    # if args.test_only:
+    #     DFpretrained_model = solver.val()
+    # else:
+    #     solver.fit()
 
     dist_utils.cleanup()
 
     # return cfg.model.decoder, solver
     # return cfg.model.decoder, cfg.train_dataloader
-    return cfg, DFpretrained_model
+    return cfg
 
     # print('cfg.model', cfg.model)
 

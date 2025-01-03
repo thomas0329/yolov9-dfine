@@ -180,9 +180,6 @@ def run(
                 batch_size = 1  # export.py models default to batch-size 1
                 LOGGER.info(f'Forcing --batch-size 1 square inference (1,3,{imgsz},{imgsz}) for non-PyTorch models')
         
-        # change model to mine
-        DF, DFpretrained_model = dfine()
-        model = DFpretrained_model
         # Data
         data = check_dataset(data)  # check
 
@@ -215,7 +212,7 @@ def run(
                                        min_items=opt.min_items,
                                        prefix=colorstr(f'{task}: '))[0]
         
-        DF, _ = dfine()
+        DF = dfine()
         dataloader = dist_utils.warp_loader(
         DF.val_dataloader, shuffle=DF.val_dataloader.shuffle
     )
