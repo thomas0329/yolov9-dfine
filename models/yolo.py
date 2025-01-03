@@ -879,11 +879,11 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             ch = []
         ch.append(c2)
     
-    os.chdir("D_FINE")
-    print("Current Working Directory:", os.getcwd())
+    # os.chdir("D_FINE")
+    # print("Current Working Directory:", os.getcwd())
 
     # cfg.model.decoder, cfg.train_dataloader
-    DF = dfine()
+    DF, _ = dfine()
     DFdec = DF.model.decoder
     DFdec.f = [15, 18, 21]  # check this
     DFdec.pre_bbox_head = layers[-1]    # DualDDetect
@@ -891,8 +891,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
     layers.pop()
     layers.append(DFdec)
 
-    os.chdir("../")
-    print("Current Working Directory:", os.getcwd())
+    # os.chdir("../")
+    # print("Current Working Directory:", os.getcwd())
 
     return nn.Sequential(*layers), sorted(save) # numbered
 
@@ -906,8 +906,8 @@ def dfine() -> None:
     """main
     """
 
-    args = Namespace(config='configs/dfine/dfine_hgnetv2_l_coco.yml', resume=None, tuning=None, device=None, seed=0, use_amp=True, output_dir=None, summary_dir=None, test_only=False, update=None, print_method='builtin', print_rank=0, local_rank=None)
-    
+    # args = Namespace(config='configs/dfine/dfine_hgnetv2_l_coco.yml', resume='/home/MTL03/yolov9-dfine/dfine_l_coco.pth', tuning=None, device=None, seed=0, use_amp=True, output_dir=None, summary_dir=None, test_only=True, update=None, print_method='builtin', print_rank=0, local_rank=None)
+    args = Namespace(config='D_FINE/configs/dfine/dfine_hgnetv2_l_coco.yml', device=None, local_rank=None, output_dir=None, print_method='builtin', print_rank=0, resume='/home/MTL03/yolov9-dfine/dfine_l_coco.pth', seed=None, summary_dir=None, test_only=True, tuning=None, update=None, use_amp=False)
     dist_utils.setup_distributed(args.print_rank, args.print_method, seed=args.seed)
 
     assert not all([args.tuning, args.resume]), \
@@ -925,21 +925,18 @@ def dfine() -> None:
         if 'HGNetv2' in cfg.yaml_cfg:
             cfg.yaml_cfg['HGNetv2']['pretrained'] = False
 
-    # print('cfg: ', cfg.__dict__)
-    # print('cfg train load', cfg.train_dataloader)   # usable
+    solver = TASKS[cfg.yaml_cfg['task']](cfg)
 
-    # solver = TASKS[cfg.yaml_cfg['task']](cfg)
+    if args.test_only:
+        DFpretrained_model = solver.val()
+    else:
+        solver.fit()
 
-    # if args.test_only:
-    #     solver.val()
-    # else:
-    #     solver.fit()
-
-    # dist_utils.cleanup()
+    dist_utils.cleanup()
 
     # return cfg.model.decoder, solver
     # return cfg.model.decoder, cfg.train_dataloader
-    return cfg
+    return cfg, DFpretrained_model
 
     # print('cfg.model', cfg.model)
 

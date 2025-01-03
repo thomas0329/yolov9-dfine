@@ -22,6 +22,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 from D_FINE.src.optim import LinearWarmup
 from D_FINE.src.solver.det_engine import evaluate
 from models.common import DetectMultiBackend
+from val import yolo_coco_val
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # root directory
@@ -62,6 +63,13 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         Path(opt.save_dir), opt.epochs, opt.batch_size, opt.weights, opt.single_cls, opt.evolve, opt.data, opt.cfg, \
         opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze
     callbacks.run('on_pretrain_routine_start')
+
+    # os.chdir("D_FINE")
+    # print("Current Working Directory:", os.getcwd())
+    
+    
+    # os.chdir("../")
+    # print("Current Working Directory:", os.getcwd())
 
     # Directories
     w = save_dir / 'weights'  # weights dir
@@ -123,8 +131,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info(f'Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
         # 852/1106 items
     else:
-        model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-        model.model[22].pre_bbox_head.training = True
+        DF, DFpretrained_model = dfine()
+        model = DFpretrained_model
+        # model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        # model.model[22].pre_bbox_head.training = True
     amp = check_amp(model)  # check AMP
 
     # Freeze
@@ -137,23 +147,23 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             v.requires_grad = False
 
     # Image size
-    gs = max(int(model.stride.max()), 32)  # grid size (max stride)
-    imgsz = check_img_size(opt.imgsz, gs, floor=gs * 2)  # verify imgsz is gs-multiple
+    # gs = max(int(model.stride.max()), 32)  # grid size (max stride)
+    # imgsz = check_img_size(opt.imgsz, gs, floor=gs * 2)  # verify imgsz is gs-multiple
 
     # Batch size
-    if RANK == -1 and batch_size == -1:  # single-GPU only, estimate best batch size
-        batch_size = check_train_batch_size(model, imgsz, amp)
-        loggers.on_params_update({"batch_size": batch_size})
+    # if RANK == -1 and batch_size == -1:  # single-GPU only, estimate best batch size
+        # batch_size = check_train_batch_size(model, imgsz, amp)
+        # loggers.on_params_update({"batch_size": batch_size})
 
     # Optimizer
     nbs = 64  # nominal batch size
-    accumulate = max(round(nbs / batch_size), 1)  # accumulate loss before optimizing
-    hyp['weight_decay'] *= batch_size * accumulate / nbs  # scale weight_decay
+    # accumulate = max(round(nbs / batch_size), 1)  # accumulate loss before optimizing
+    # hyp['weight_decay'] *= batch_size * accumulate / nbs  # scale weight_decay
     optimizer = smart_optimizer(model, opt.optimizer, hyp['lr0'], hyp['momentum'], hyp['weight_decay'])
 
     # Scheduler
     if opt.cos_lr:
-        lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1->hyp['lrf']
+        lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1-> hyp['lrf']
     elif opt.flat_cos_lr:
         lf = one_flat_cycle(1, hyp['lrf'], epochs)  # flat cosine 1->hyp['lrf']        
     elif opt.fixed_lr:
@@ -186,10 +196,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info('Using SyncBatchNorm()')
 
 
-    os.chdir("D_FINE")
-    print("Current Working Directory:", os.getcwd())
-
-    DF = dfine()
     DFtrain_dataloader = dist_utils.warp_loader( # deal w DDP
         DF.train_dataloader, shuffle=DF.train_dataloader.shuffle
     )
@@ -200,74 +206,72 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     DFscalar = DF.scaler
     DFlr_scheduler = MultiStepLR(optimizer=optimizer, milestones=[2], gamma=0.1)
     DFlr_warmup_scheduler = LinearWarmup(lr_scheduler=DFlr_scheduler, warmup_duration=500)      # depends on lr_scheduler
-    
-    os.chdir("../")
-    print("Current Working Directory:", os.getcwd())
 
     
 
-    train_loader, dataset = create_dataloader(train_path,
-                                              imgsz,
-                                              batch_size // WORLD_SIZE,
-                                              gs,
-                                              single_cls,
-                                              hyp=hyp,
-                                              augment=True,
-                                              cache=None if opt.cache == 'val' else opt.cache,
-                                              rect=opt.rect,
-                                              rank=LOCAL_RANK,
-                                              workers=workers,
-                                              image_weights=opt.image_weights,
-                                              close_mosaic=opt.close_mosaic != 0,
-                                              quad=opt.quad,
-                                              prefix=colorstr('train: '),
-                                              shuffle=True,
-                                              min_items=opt.min_items)
-    labels = np.concatenate(dataset.labels, 0)
-    mlc = int(labels[:, 0].max())  # max label class
-    assert mlc < nc, f'Label class {mlc} exceeds nc={nc} in {data}. Possible class labels are 0-{nc - 1}'
+    # train_loader, dataset = create_dataloader(train_path,
+    #                                           imgsz,
+    #                                           batch_size // WORLD_SIZE,
+    #                                           gs,
+    #                                           single_cls,
+    #                                           hyp=hyp,
+    #                                           augment=True,
+    #                                           cache=None if opt.cache == 'val' else opt.cache,
+    #                                           rect=opt.rect,
+    #                                           rank=LOCAL_RANK,
+    #                                           workers=workers,
+    #                                           image_weights=opt.image_weights,
+    #                                           close_mosaic=opt.close_mosaic != 0,
+    #                                           quad=opt.quad,
+    #                                           prefix=colorstr('train: '),
+    #                                           shuffle=True,
+    #                                           min_items=opt.min_items)
+    # labels = np.concatenate(dataset.labels, 0)
+    # mlc = int(labels[:, 0].max())  # max label class
+    # assert mlc < nc, f'Label class {mlc} exceeds nc={nc} in {data}. Possible class labels are 0-{nc - 1}'
 
     # Process 0
     if RANK in {-1, 0}:
-        val_loader = create_dataloader(val_path,
-                                       imgsz,
-                                       batch_size // WORLD_SIZE * 2,
-                                       gs,
-                                       single_cls,
-                                       hyp=hyp,
-                                       cache=None if noval else opt.cache,
-                                       rect=True,
-                                       rank=-1,
-                                       workers=workers * 2,
-                                       pad=0.5,
-                                       prefix=colorstr('val: '))[0]
+        # val_loader = create_dataloader(val_path,
+        #                                imgsz,
+        #                                batch_size // WORLD_SIZE * 2,
+        #                                gs,
+        #                                single_cls,
+        #                                hyp=hyp,
+        #                                cache=None if noval else opt.cache,
+        #                                rect=True,
+        #                                rank=-1,
+        #                                workers=workers * 2,
+        #                                pad=0.5,
+        #                                prefix=colorstr('val: '))[0]
 
         if not resume:
             # if not opt.noautoanchor:
             #     check_anchors(dataset, model=model, thr=hyp['anchor_t'], imgsz=imgsz)  # run AutoAnchor
             model.half().float()  # pre-reduce anchor precision
 
-        callbacks.run('on_pretrain_routine_end', labels, names)
+        # callbacks.run('on_pretrain_routine_end', labels, names)
 
     # DDP mode
     if cuda and RANK != -1:
-        model = smart_DDP(model)
+        # model = smart_DDP(model)
+        pass
 
     # Model attributes
-    nl = de_parallel(model).model[-1].num_layers  # number of detection layers (to scale hyps)
+    # nl = de_parallel(model).model[-1].num_layers  # number of detection layers (to scale hyps)
     #hyp['box'] *= 3 / nl  # scale to layers
     #hyp['cls'] *= nc / 80 * 3 / nl  # scale to classes and layers
     #hyp['obj'] *= (imgsz / 640) ** 2 * 3 / nl  # scale to image size and layers
     hyp['label_smoothing'] = opt.label_smoothing
     model.nc = nc  # attach number of classes to model
     model.hyp = hyp  # attach hyperparameters to model
-    model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
+    # model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
     model.names = names
 
     # Start training
     t0 = time.time()
-    nb = len(train_loader)  # number of batches
-    nw = max(round(hyp['warmup_epochs'] * nb), 100)  # number of warmup iterations, max(3 epochs, 100 iterations)
+    # nb = len(train_loader)  # number of batches
+    # nw = max(round(hyp['warmup_epochs'] * nb), 100)  # number of warmup iterations, max(3 epochs, 100 iterations)
     # nw = min(nw, (epochs - start_epoch) / 2 * nb)  # limit warmup to < 1/2 of training
     last_opt_step = -1
     maps = np.zeros(nc)  # mAP per class
@@ -275,57 +279,58 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = torch.cuda.amp.GradScaler(enabled=amp)
     stopper, stop = EarlyStopping(patience=opt.patience), False
-    compute_loss = ComputeLoss(model)  # init loss class
+    # compute_loss = ComputeLoss(model)  # init loss class
     callbacks.run('on_train_start')
-    LOGGER.info(f'Image sizes {imgsz} train, {imgsz} val\n'
-                f'Using {train_loader.num_workers * WORLD_SIZE} dataloader workers\n'
-                f"Logging results to {colorstr('bold', save_dir)}\n"
-                f'Starting training for {epochs} epochs...')
+    # LOGGER.info(f'Image sizes {imgsz} train, {imgsz} val\n'
+    #             f'Using {train_loader.num_workers * WORLD_SIZE} dataloader workers\n'
+    #             f"Logging results to {colorstr('bold', save_dir)}\n"
+    #             f'Starting training for {epochs} epochs...')
+    print(f'start training for {epochs} epochs...')
     # 72 eps for dfine
     for epoch in range(start_epoch, epochs):  # ------------------------------------------------------------------
         callbacks.run('on_train_epoch_start')
         model.train()
 
         # Update image weights (optional, single-GPU only)
-        if opt.image_weights:
-            cw = model.class_weights.cpu().numpy() * (1 - maps) ** 2 / nc  # class weights
-            iw = labels_to_image_weights(dataset.labels, nc=nc, class_weights=cw)  # image weights
-            dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
-        if epoch == (epochs - opt.close_mosaic):
-            LOGGER.info("Closing dataloader mosaic")
-            dataset.mosaic = False
+        # if opt.image_weights:
+        #     cw = model.class_weights.cpu().numpy() * (1 - maps) ** 2 / nc  # class weights
+        #     iw = labels_to_image_weights(dataset.labels, nc=nc, class_weights=cw)  # image weights
+        #     dataset.indices = random.choices(range(dataset.n), weights=iw, k=dataset.n)  # rand weighted idx
+        # if epoch == (epochs - opt.close_mosaic):
+        #     LOGGER.info("Closing dataloader mosaic")
+        #     dataset.mosaic = False
 
         # Update mosaic border (optional)
         # b = int(random.uniform(0.25 * imgsz, 0.75 * imgsz + gs) // gs * gs)
         # dataset.mosaic_border = [b - imgsz, -b]  # height, width borders
 
         mloss = torch.zeros(3, device=device)  # mean losses
-        if RANK != -1:
-            train_loader.sampler.set_epoch(epoch)
-        pbar = enumerate(train_loader)
+        # if RANK != -1:
+        #     train_loader.sampler.set_epoch(epoch)
+        # pbar = enumerate(train_loader)
         LOGGER.info(('\n' + '%11s' * 7) % ('Epoch', 'GPU_mem', 'box_loss', 'cls_loss', 'dfl_loss', 'Instances', 'Size'))
         if RANK in {-1, 0}:
-            pbar = tqdm(pbar, total=nb, bar_format=TQDM_BAR_FORMAT)  # progress bar
+            # pbar = tqdm(pbar, total=nb, bar_format=TQDM_BAR_FORMAT)  # progress bar
+            pass
         optimizer.zero_grad()
-        print('training')
 
         # training should be fine as I just copied dfine's training function
-        train_one_epoch(
-                model,  # Model, smart_DDP
-                DF.criterion,
-                DFtrain_dataloader,
-                optimizer,  # yolo opt for now
-                device,
-                epoch,
-                max_norm=DF.clip_max_norm,
-                print_freq=DF.print_freq,
-                ema=DFema,  # depends on model  
-                # scaler=DF.scaler, # disable amp
-                lr_warmup_scheduler=DFlr_warmup_scheduler,
-                writer=DF.writer
-        )
-        if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
-            DFlr_scheduler.step()
+        # train_one_epoch(
+        #         model,  # Model, smart_DDP
+        #         DF.criterion,
+        #         DFtrain_dataloader,
+        #         optimizer,  # yolo opt for now
+        #         device,
+        #         epoch,
+        #         max_norm=DF.clip_max_norm,
+        #         print_freq=DF.print_freq,
+        #         ema=DFema,  # depends on model  
+        #         # scaler=DF.scaler, # disable amp
+        #         lr_warmup_scheduler=DFlr_warmup_scheduler,
+        #         writer=DF.writer
+        # )
+        # if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
+        #     DFlr_scheduler.step()
 
         # for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
         #     callbacks.run('on_train_batch_start')
@@ -411,21 +416,21 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             if not noval or final_epoch:  # Calculate mAP
             
                 # module = self.ema.module if self.ema else self.model
-                coco_evaluator, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
-                    DFval_dataloader, DF.evaluator, device)
+                # coco_evaluator, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
+                #     DFval_dataloader, DF.evaluator, device)
 
-                results, maps, _ = validate.run(data_dict,
-                                            batch_size=batch_size // WORLD_SIZE * 2,
-                                            imgsz=imgsz,
-                                            half=amp,
-                                            model=DFema.module,  # is this correct?
-                                            single_cls=single_cls,
-                                            dataloader=val_loader,
-                                            save_dir=save_dir,
-                                            plots=False,
-                                            callbacks=callbacks,
-                                            compute_loss=compute_loss,
-                                            DFjdict=DFjdict)
+                # results, maps, _ = validate.run(data_dict,
+                #                             batch_size=batch_size // WORLD_SIZE * 2,
+                #                             imgsz=imgsz,
+                #                             half=amp,
+                #                             model=DFema.module,  # is this correct?
+                #                             single_cls=single_cls,
+                #                             dataloader=val_loader,
+                #                             save_dir=save_dir,
+                #                             plots=False,
+                #                             callbacks=callbacks,
+                #                             compute_loss=compute_loss,
+                #                             DFjdict=DFjdict)
                 pass
 
             # Update best mAP
@@ -461,7 +466,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         # EarlyStopping
         if RANK != -1:  # if DDP training
             broadcast_list = [stop if RANK == 0 else None]
-            dist.broadcast_object_list(broadcast_list, 0)  # broadcast 'stop' to all ranks
+            # dist.broadcast_object_list(broadcast_list, 0)  # broadcast 'stop' to all ranks
             if RANK != 0:
                 stop = broadcast_list[0]
         if stop:
@@ -485,22 +490,24 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 if f is best:
                     LOGGER.info(f'\nValidating {f}...')
                     # plot at the end of training
-                    coco_evaluator, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
+                    coco_evaluator, DFjdict = evaluate(DFpretrained_model, DF.criterion, DF.postprocessor,
                     DFval_dataloader, DF.evaluator, device)
 
-                    results, maps, _ = validate.run(data_dict,
-                                                batch_size=batch_size // WORLD_SIZE * 2,
-                                                imgsz=imgsz,
-                                                half=amp,
-                                                model=DFema.module,  # is this correct?
-                                                single_cls=single_cls,
-                                                dataloader=val_loader,
-                                                save_dir=save_dir,
-                                                save_json=True, 
-                                                plots=False,
-                                                callbacks=callbacks,
-                                                compute_loss=compute_loss,
-                                                DFjdict=DFjdict)
+                    yolo_coco_val(DFjdict, data_dict, save_dir, is_coco, DFval_dataloader)
+
+                    # results, maps, _ = validate.run(data_dict,
+                    #                             batch_size=batch_size // WORLD_SIZE * 2,
+                    #                             imgsz=imgsz,
+                    #                             half=amp,
+                    #                             model=DFema.module,  # is this correct?
+                    #                             single_cls=single_cls,
+                    #                             dataloader=val_loader,
+                    #                             save_dir=save_dir,
+                    #                             save_json=True, 
+                    #                             plots=False,
+                    #                             callbacks=callbacks,
+                    #                             compute_loss=compute_loss,
+                    #                             DFjdict=DFjdict)
 
                     if is_coco:
                         callbacks.run('on_fit_epoch_end', list(mloss) + list(results) + lr, epoch, best_fitness, fi)
