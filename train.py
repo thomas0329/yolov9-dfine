@@ -286,6 +286,11 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     #             f"Logging results to {colorstr('bold', save_dir)}\n"
     #             f'Starting training for {epochs} epochs...')
     print(f'start training for {epochs} epochs...')
+
+    # print('load my weights')
+
+
+
     # 72 eps for dfine
     for epoch in range(start_epoch, epochs):  # ------------------------------------------------------------------
         callbacks.run('on_train_epoch_start')
@@ -414,12 +419,14 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             # ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])   # model to ema
             final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
             if not noval or final_epoch:  # Calculate mAP
+
+                # TODO: load my save and test evaluation!
             
                 # module = self.ema.module if self.ema else self.model
-                _, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
-                    DFval_dataloader, DF.evaluator, device)
+                # _, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
+                #     DFval_dataloader, DF.evaluator, device)
 
-                yolo_coco_val(DFjdict, data_dict, save_dir, is_coco, DFval_dataloader)
+                # yolo_coco_val(DFjdict, data_dict, save_dir, is_coco, DFval_dataloader)
 
                 # results, maps, _ = validate.run(data_dict,
                 #                             batch_size=batch_size // WORLD_SIZE * 2,
@@ -478,7 +485,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     # end training -----------------------------------------------------------------------------------------------------
 
     # print('load my pretrained weights')
-    # model = DetectMultiBackend('runs/train/gelan-c169/weights/best.pt', device=device, dnn=False, data='./data/coco.yaml', fp16=False)
+    # # model = DetectMultiBackend('my_save_ep=0.pt', device=device, dnn=False, data='./data/coco.yaml', fp16=False)
+    # model.load_state_dict(torch.load('my_save_ep=0.pt', weights_only=True))
     # model.eval()
 
     if RANK in {-1, 0}:
@@ -492,7 +500,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 if f is best:
                     LOGGER.info(f'\nValidating {f}...')
                     # plot at the end of training
-                    _, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
+                    _, DFjdict = evaluate(model, DF.criterion, DF.postprocessor,
                     DFval_dataloader, DF.evaluator, device)
 
                     yolo_coco_val(DFjdict, data_dict, save_dir, is_coco, DFval_dataloader)
