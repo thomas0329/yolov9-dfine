@@ -171,7 +171,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         lf = lambda x: (1 - x / epochs) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear
 
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
-    from utils.plots import plot_lr_scheduler; plot_lr_scheduler(optimizer, scheduler, epochs)
+    # from utils.plots import plot_lr_scheduler; plot_lr_scheduler(optimizer, scheduler, epochs)
 
     # EMA
     # ema = ModelEMA(model) if RANK in {-1, 0} else None
@@ -254,8 +254,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
     # DDP mode
     if cuda and RANK != -1:
-        # model = smart_DDP(model)
-        pass
+        model = smart_DDP(model)
 
     # Model attributes
     # nl = de_parallel(model).model[-1].num_layers  # number of detection layers (to scale hyps)
@@ -287,7 +286,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     #             f'Starting training for {epochs} epochs...')
     print(f'start training for {epochs} epochs...')
 
-    # print('load my weights')
 
 
 
@@ -320,6 +318,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         optimizer.zero_grad()
 
         # training should be fine as I just copied dfine's training function
+    
         train_one_epoch(
                 model,  # Model, smart_DDP
                 DF.criterion,
@@ -331,7 +330,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 print_freq=DF.print_freq,
                 ema=DFema,  # depends on model  
                 # scaler=DF.scaler, # disable amp
-                lr_warmup_scheduler=DFlr_warmup_scheduler,
+                lr_warmup_scheduler=DFlr_warmup_scheduler,    # disable warmup for training from last ckpt
                 writer=DF.writer
         )
         if DFlr_warmup_scheduler is None or DFlr_warmup_scheduler.finished():
@@ -423,10 +422,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 # TODO: load my save and test evaluation!
             
                 # module = self.ema.module if self.ema else self.model
-                # _, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
-                #     DFval_dataloader, DF.evaluator, device)
+                _, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
+                    DFval_dataloader, DF.evaluator, device)
 
-                # yolo_coco_val(DFjdict, data_dict, save_dir, is_coco, DFval_dataloader)
+                yolo_coco_val(DFjdict, data_dict, save_dir, is_coco, DFval_dataloader)
 
                 # results, maps, _ = validate.run(data_dict,
                 #                             batch_size=batch_size // WORLD_SIZE * 2,

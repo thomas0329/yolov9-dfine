@@ -932,7 +932,7 @@ def dfine() -> None:
     # else:
     #     solver.fit()
 
-    dist_utils.cleanup()
+    # dist_utils.cleanup()
 
     # return cfg.model.decoder, solver
     # return cfg.model.decoder, cfg.train_dataloader

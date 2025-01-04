@@ -313,8 +313,8 @@ def copy_attr(a, b, include=(), exclude=()):
 
 
 def smart_optimizer(model, name='Adam', lr=0.001, momentum=0.9, decay=1e-5):
-    print('lr', lr)
-    # lr = 0.0000125    # my modification
+    print('lr', lr) # lr 0.01
+    # lr=0.005   # my modification
     # YOLOv5 3-param group optimizer: 0) weights with decay, 1) weights no decay, 2) biases no decay
     g = [], [], []  # optimizer parameter groups
     bn = tuple(v for k, v in nn.__dict__.items() if 'Norm' in k)  # normalization layers, i.e. BatchNorm2d()
@@ -425,7 +425,7 @@ def smart_optimizer(model, name='Adam', lr=0.001, momentum=0.9, decay=1e-5):
             else:
                 for iv in v.ia7:
                     g[1].append(iv.implicit)
-
+    
     if name == 'Adam':
         optimizer = torch.optim.Adam(g[2], lr=lr, betas=(momentum, 0.999))  # adjust beta1 to momentum
     elif name == 'AdamW':
