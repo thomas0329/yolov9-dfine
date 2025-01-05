@@ -40,7 +40,7 @@ class Detect(nn.Module):
         super().__init__()
         self.nc = nc  # number of classes
         self.nl = len(ch)  # number of detection layers
-        self.reg_max = 16
+        self.reg_max = 32
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
         self.stride = torch.zeros(self.nl)  # strides computed during build
@@ -90,7 +90,7 @@ class DDetect(nn.Module):   # this
         ch = [512]  # my modification
         self.nc = nc  # number of classes
         self.nl = len(ch)  # number of detection layers
-        self.reg_max = 16
+        self.reg_max = 32
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
         self.stride = torch.zeros(self.nl)  # strides computed during build
@@ -168,7 +168,7 @@ class DualDetect(nn.Module):
         super().__init__()
         self.nc = nc  # number of classes
         self.nl = len(ch) // 2  # number of detection layers
-        self.reg_max = 16
+        self.reg_max = 32
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
         self.stride = torch.zeros(self.nl)  # strides computed during build
@@ -248,7 +248,7 @@ class DualDDetect(nn.Module):   # outputs class info
         self.nc = nc  # number of classes
         self.nl = 1  # number of detection layers
         # self.nl = len(ch) // 2  # number of detection layers
-        self.reg_max = 16
+        self.reg_max = 32
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
         self.stride = torch.zeros(self.nl)  # strides computed during build
@@ -345,7 +345,7 @@ class TripleDetect(nn.Module):
         super().__init__()
         self.nc = nc  # number of classes
         self.nl = len(ch) // 3  # number of detection layers
-        self.reg_max = 16
+        self.reg_max = 32
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
         self.stride = torch.zeros(self.nl)  # strides computed during build
@@ -421,7 +421,7 @@ class TripleDDetect(nn.Module):
         super().__init__()
         self.nc = nc  # number of classes
         self.nl = len(ch) // 3  # number of detection layers
-        self.reg_max = 16
+        self.reg_max = 32
         self.no = nc + self.reg_max * 4  # number of outputs per anchor
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
         self.stride = torch.zeros(self.nl)  # strides computed during build

@@ -57,6 +57,25 @@ RANK = int(os.getenv('RANK', -1))
 WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
 GIT_INFO = None
 
+def my_optim(model):
+    # Create parameter groups with different learning rates
+    # for name, child in model.model.named_children():
+        # print(name)   # 0 - 22
+
+    param_groups = []
+    for i, component in enumerate(model.model):
+        if i != 22: # backbone
+            lr = 0.0000063
+            param_groups.append({"params": component.parameters(), "lr": lr})
+        else:
+            lr = 0.000125
+            betas = [0.9, 0.999]
+            weight_decay = 0.000125
+            param_groups.append({"params": component.parameters(), "lr": lr, "betas": betas, "weight_decay": weight_decay})
+
+    # Define optimizer with parameter groups
+    return torch.optim.AdamW(param_groups)
+
 
 def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary
     save_dir, epochs, batch_size, weights, single_cls, evolve, data, cfg, resume, noval, nosave, workers, freeze = \
@@ -158,7 +177,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     nbs = 64  # nominal batch size
     accumulate = max(round(nbs / batch_size), 1)  # accumulate loss before optimizing
     hyp['weight_decay'] *= batch_size * accumulate / nbs  # scale weight_decay
-    optimizer = smart_optimizer(model, opt.optimizer, hyp['lr0'], hyp['momentum'], hyp['weight_decay'])
+    # optimizer = smart_optimizer(model, opt.optimizer, hyp['lr0'], hyp['momentum'], hyp['weight_decay'])
+
+    optimizer = my_optim(model)
+
 
     # Scheduler
     if opt.cos_lr:
@@ -195,7 +217,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info('Using SyncBatchNorm()')
 
     DF = dfine()
-
+    DFoptim = DF.optimizer
     DFtrain_dataloader = dist_utils.warp_loader( # deal w DDP
         DF.train_dataloader, shuffle=DF.train_dataloader.shuffle
     )
@@ -204,7 +226,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     )
     # DFlr_scheduler = DF.lr_scheduler    # should depend on opt
     DFscalar = DF.scaler
-    DFlr_scheduler = MultiStepLR(optimizer=optimizer, milestones=[2], gamma=0.1)
+    DFlr_scheduler = MultiStepLR(optimizer=optimizer, milestones=[], gamma=0.1)
     DFlr_warmup_scheduler = LinearWarmup(lr_scheduler=DFlr_scheduler, warmup_duration=500)      # depends on lr_scheduler
 
     
@@ -287,6 +309,12 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     print(f'start training for {epochs} epochs...')
 
 
+    # print('load my pretrained weights')
+    # # model = DetectMultiBackend('my_save_ep=0.pt', device=device, dnn=False, data='./data/coco.yaml', fp16=False)
+    # model.load_state_dict(torch.load('my_save_ep=0.pt', weights_only=True))
+    print('model', model.module.model)
+
+
 
 
     # 72 eps for dfine
@@ -323,7 +351,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 model,  # Model, smart_DDP
                 DF.criterion,
                 DFtrain_dataloader,
-                optimizer,  # yolo opt for now
+                optimizer,
                 device,
                 epoch,
                 max_norm=DF.clip_max_norm,
@@ -420,7 +448,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             if not noval or final_epoch:  # Calculate mAP
 
                 # TODO: load my save and test evaluation!
-            
+
                 # module = self.ema.module if self.ema else self.model
                 _, DFjdict = evaluate(DFema.module, DF.criterion, DF.postprocessor,
                     DFval_dataloader, DF.evaluator, device)
