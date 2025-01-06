@@ -312,7 +312,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     # print('load my pretrained weights')
     # # model = DetectMultiBackend('my_save_ep=0.pt', device=device, dnn=False, data='./data/coco.yaml', fp16=False)
     # model.load_state_dict(torch.load('my_save_ep=0.pt', weights_only=True))
-    print('model', model.module.model)
 
 
 
@@ -470,34 +469,34 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 pass
 
             # Update best mAP
-            fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
-            stop = stopper(epoch=epoch, fitness=fi)  # early stop check
-            if fi > best_fitness:
-                best_fitness = fi
-            log_vals = list(mloss) + list(results) + lr
-            callbacks.run('on_fit_epoch_end', log_vals, epoch, best_fitness, fi)
+            # fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
+            # stop = stopper(epoch=epoch, fitness=fi)  # early stop check
+            # if fi > best_fitness:
+            #     best_fitness = fi
+            # log_vals = list(mloss) + list(results) + lr
+            # callbacks.run('on_fit_epoch_end', log_vals, epoch, best_fitness, fi)
 
             # Save model
-            if (not nosave) or (final_epoch and not evolve):  # if save
-                ckpt = {
-                    'epoch': epoch,
-                    'best_fitness': best_fitness,
-                    'model': deepcopy(de_parallel(model)).half(),
-                    'ema': deepcopy(DFema.module).half(),
-                    'updates': DFema.updates,
-                    'optimizer': optimizer.state_dict(),
-                    'opt': vars(opt),
-                    'git': GIT_INFO,  # {remote, branch, commit} if a git repo
-                    'date': datetime.now().isoformat()}
+            # if (not nosave) or (final_epoch and not evolve):  # if save
+            #     ckpt = {
+            #         'epoch': epoch,
+            #         'best_fitness': best_fitness,
+            #         'model': deepcopy(de_parallel(model)).half(),
+            #         'ema': deepcopy(DFema.module).half(),
+            #         'updates': DFema.updates,
+            #         'optimizer': optimizer.state_dict(),
+            #         'opt': vars(opt),
+            #         'git': GIT_INFO,  # {remote, branch, commit} if a git repo
+            #         'date': datetime.now().isoformat()}
 
-                # Save last, best and delete
-                torch.save(ckpt, last)
-                if best_fitness == fi:
-                    torch.save(ckpt, best)
-                if opt.save_period > 0 and epoch % opt.save_period == 0:
-                    torch.save(ckpt, w / f'epoch{epoch}.pt')
-                del ckpt
-                callbacks.run('on_model_save', last, epoch, final_epoch, best_fitness, fi)
+            #     # Save last, best and delete
+            #     torch.save(ckpt, last)
+            #     if best_fitness == fi:
+            #         torch.save(ckpt, best)
+            #     if opt.save_period > 0 and epoch % opt.save_period == 0:
+            #         torch.save(ckpt, w / f'epoch{epoch}.pt')
+            #     del ckpt
+            #     callbacks.run('on_model_save', last, epoch, final_epoch, best_fitness, fi)
 
         # EarlyStopping
         if RANK != -1:  # if DDP training

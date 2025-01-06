@@ -132,6 +132,7 @@ class DDetect(nn.Module):   # this
 
         # assert False, self.dfl(box).device  # cpu
         # assert False, self.anchors.device   # cpu
+        # dbox: cx cy w h
         dbox = dist2bbox(self.dfl(box), self.anchors.unsqueeze(0), xywh=True, dim=1) * self.strides
         y = torch.cat((dbox, cls.sigmoid()), 1)
 
@@ -886,7 +887,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
     DF = dfine()
     DFdec = DF.model.decoder
     DFdec.f = [15, 18, 21]  # check this
-    # DFdec.pre_bbox_head = layers[-1]    # DDetect
+    DFdec.pre_bbox_head = layers[-1]    # DDetect
     
     layers.pop()
     layers.append(DFdec)
