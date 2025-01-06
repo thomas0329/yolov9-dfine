@@ -66,9 +66,8 @@ def yolo_coco_val(DFjdict, data, save_dir, is_coco, dataloader):
                 eval.params.imgIds = [x for x in dataloader.dataset.ids]  # image IDs to evaluate
             eval.evaluate()
             eval.accumulate()
-            print('my summarize starts')
             eval.summarize()
-            print('my summarize ends')
+            print('eval.stats', len(eval.stats))
             map, map50 = eval.stats[:2]  # update results (mAP@0.5:0.95, mAP@0.5)
         except Exception as e:
             LOGGER.info(f'pycocotools unable to run: {e}')
@@ -232,148 +231,148 @@ def run(
     pbar = tqdm(dataloader, desc=s, bar_format=TQDM_BAR_FORMAT)  # progress bar
 
 
-    # for batch_i, (im, targets, paths, shapes) in enumerate(pbar):   # yolo loader
-    #     # im loaded by yolo loader ([1, 3, 448, 672])
-    #     # shapes [[[426, 640], [[1.0, 1.0], [16.0, 11.0]]]]
-    #     # print('im', im.shape)   im torch.Size([64, 3, 448, 672])
-    #     # im has different shape across batches
-    #     # torch.tensor([640, 425])
-    #     orig_target_sizes = [torch.tensor([shape[0][1], shape[0][0]]) for shape in shapes]
-    #     orig_target_sizes = torch.stack(orig_target_sizes, dim=0)
-    #     # orig_target_sizes tensor([[640, 426]], correct!
-    #     callbacks.run('on_val_batch_start')
-    #     with dt[0]:
-    #         if cuda:
-    #             im = im.to(device, non_blocking=True)
-    #             targets = targets.to(device)
-    #         # im = im.half() if half else im.float()  # uint8 to fp16/32
-    #         im = im.float()  # uint8 to fp16/32
-    #         # im /= 255  # 0 - 255 to 0.0 - 1.0   # will this be the problem?
-    #         nb, _, height, width = im.shape  # batch size, channels, height, width
+    for batch_i, (im, targets, paths, shapes) in enumerate(pbar):   # yolo loader
+        # im loaded by yolo loader ([1, 3, 448, 672])
+        # shapes [[[426, 640], [[1.0, 1.0], [16.0, 11.0]]]]
+        # print('im', im.shape)   im torch.Size([64, 3, 448, 672])
+        # im has different shape across batches
+        # torch.tensor([640, 425])
+        orig_target_sizes = [torch.tensor([shape[0][1], shape[0][0]]) for shape in shapes]
+        orig_target_sizes = torch.stack(orig_target_sizes, dim=0)
+        # orig_target_sizes tensor([[640, 426]], correct!
+        callbacks.run('on_val_batch_start')
+        with dt[0]:
+            if cuda:
+                im = im.to(device, non_blocking=True)
+                targets = targets.to(device)
+            # im = im.half() if half else im.float()  # uint8 to fp16/32
+            im = im.float()  # uint8 to fp16/32
+            # im /= 255  # 0 - 255 to 0.0 - 1.0   # will this be the problem?
+            nb, _, height, width = im.shape  # batch size, channels, height, width
 
-    #     # Inference
-    #     # model.model[22].pre_bbox_head.training = True
-    #     # model.model[22].training = True # dfinetransformer
-    #     with dt[1]: # out, main_d_ddetect. orginally: (y, x), y: dbox & cls
-    #         (preds, d_ddetect) = model(im)  # for now
-    #         # (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)
-    #         # print('preds', preds.keys())    # preds dict_keys(['pred_logits', 'pred_boxes', 'pred_corners'])
+        # Inference
+        # model.model[22].pre_bbox_head.training = True
+        # model.model[22].training = True # dfinetransformer
+        with dt[1]: # out, main_d_ddetect. orginally: (y, x), y: dbox & cls
+            (preds, d_ddetect) = model(im)  # for now
+            # (preds, d_ddetect) = model(im) if compute_loss else (model(im, augment=augment), None)
+            # print('preds', preds.keys())    # preds dict_keys(['pred_logits', 'pred_boxes', 'pred_corners'])
 
-    #     results = postprocessor(preds, orig_target_sizes.to(device), return_logits=True)
-    #     boxes = results['boxes'].permute(0, 2, 1)
-    #     logits = results['logits'].permute(0, 2, 1)
-    #     preds = torch.cat((boxes, logits), 1) # 4 + 80
-    #     # preds should be in yolo format! xywh
+        results = postprocessor(preds, orig_target_sizes.to(device), return_logits=True)
+        boxes = results['boxes'].permute(0, 2, 1)
+        logits = results['logits'].permute(0, 2, 1)
+        preds = torch.cat((boxes, logits), 1) # 4 + 80
+        # preds should be in yolo format! xywh
         
-    #     # Loss
-    #     compute_loss = False    # for now
-    #     if compute_loss:
-    #         # preds format: y = torch.cat((dbox, cls.sigmoid()), 1)
-    #         loss += compute_loss((preds, d_ddetect), targets)[1]  # box, obj, cls
+        # Loss
+        compute_loss = False    # for now
+        if compute_loss:
+            # preds format: y = torch.cat((dbox, cls.sigmoid()), 1)
+            loss += compute_loss((preds, d_ddetect), targets)[1]  # box, obj, cls
 
-    #     # NMS
-    #     targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
-    #     lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
-    #     with dt[2]:
-    #         # preds format conversion has to be finished!
-    #         # preds before NMS: # [32, 84, 7056]
-    #         # dict_keys(['pred_logits', 'pred_boxes', 'pred_corners'])
+        # NMS
+        targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
+        lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
+        with dt[2]:
+            # preds format conversion has to be finished!
+            # preds before NMS: # [32, 84, 7056]
+            # dict_keys(['pred_logits', 'pred_boxes', 'pred_corners'])
             
-    #         # preds b4 nms torch.Size([64, 84, 300])    (originally [64, 84, 5292])
-    #         # preds format: torch.cat((dbox, cls.sigmoid()), 1) # 4 + 80
-    #         # BOX FORMAT: xywh. is it normalized?
-    #         # but dfine postprocessed out is xyxy (absolute distance)
-    #         preds = non_max_suppression(preds,
-    #                                     conf_thres,
-    #                                     iou_thres,
-    #                                     labels=lb,
-    #                                     multi_label=True,
-    #                                     agnostic=single_cls,
-    #                                     max_det=max_det, 
-    #                                     orig_target_sizes=orig_target_sizes,
-    #                                     device=device
-    #                                     )
-    #         # print('preds', preds)   # not really all zero
+            # preds b4 nms torch.Size([64, 84, 300])    (originally [64, 84, 5292])
+            # preds format: torch.cat((dbox, cls.sigmoid()), 1) # 4 + 80
+            # BOX FORMAT: xywh. is it normalized?
+            # but dfine postprocessed out is xyxy (absolute distance)
+            preds = non_max_suppression(preds,
+                                        conf_thres,
+                                        iou_thres,
+                                        labels=lb,
+                                        multi_label=True,
+                                        agnostic=single_cls,
+                                        max_det=max_det, 
+                                        orig_target_sizes=orig_target_sizes,
+                                        device=device
+                                        )
+            # print('preds', preds)   # not really all zero
             
-    #         # preds.len 64
-    #         # p (preds[0].shape)  # all [300, 6], why?  # [xyxy, conf, cls]
+            # preds.len 64
+            # p (preds[0].shape)  # all [300, 6], why?  # [xyxy, conf, cls]
     
         
-    #     # Metrics
-    #     for si, pred in enumerate(preds):   # preds should be in yolo's format!
-    #         labels = targets[targets[:, 0] == si, 1:]
-    #         nl, npr = labels.shape[0], pred.shape[0]  # number of labels, predictions
-    #         path, shape = Path(paths[si]), shapes[si][0]
-    #         # shapes [[[426, 640], [[1.0, 1.0], [16.0, 11.0]]]]
-    #         correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)  # init
-    #         seen += 1
+        # Metrics
+        for si, pred in enumerate(preds):   # preds should be in yolo's format!
+            labels = targets[targets[:, 0] == si, 1:]
+            nl, npr = labels.shape[0], pred.shape[0]  # number of labels, predictions
+            path, shape = Path(paths[si]), shapes[si][0]
+            # shapes [[[426, 640], [[1.0, 1.0], [16.0, 11.0]]]]
+            correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)  # init
+            seen += 1
 
-    #         if npr == 0:
-    #             if nl:
-    #                 stats.append((correct, *torch.zeros((2, 0), device=device), labels[:, 0]))
-    #                 if plots:
-    #                     confusion_matrix.process_batch(detections=None, labels=labels[:, 0])
-    #             continue
+            if npr == 0:
+                if nl:
+                    stats.append((correct, *torch.zeros((2, 0), device=device), labels[:, 0]))
+                    if plots:
+                        confusion_matrix.process_batch(detections=None, labels=labels[:, 0])
+                continue
 
-    #         # Predictions
-    #         if single_cls:
-    #             pred[:, 5] = 0
-    #         predn = pred.clone()
-    #         scale_boxes(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
+            # Predictions
+            if single_cls:
+                pred[:, 5] = 0
+            predn = pred.clone()
+            scale_boxes(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
 
-    #         # Evaluate
-    #         if nl:
-    #             tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
-    #             scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
-    #             labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
-    #             correct = process_batch(predn, labelsn, iouv)
-    #             if plots:
-    #                 confusion_matrix.process_batch(predn, labelsn)
-    #         stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0]))  # (correct, conf, pcls, tcls)
+            # Evaluate
+            if nl:
+                tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
+                scale_boxes(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
+                labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
+                correct = process_batch(predn, labelsn, iouv)
+                if plots:
+                    confusion_matrix.process_batch(predn, labelsn)
+            stats.append((correct, pred[:, 4], pred[:, 5], labels[:, 0]))  # (correct, conf, pcls, tcls)
 
-    #         # Save/log
-    #         if save_txt:
-    #             save_one_txt(predn, save_conf, shape, file=save_dir / 'labels' / f'{path.stem}.txt')
-    #         if save_json:
-    #             save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
-    #         callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
+            # Save/log
+            if save_txt:
+                save_one_txt(predn, save_conf, shape, file=save_dir / 'labels' / f'{path.stem}.txt')
+            if save_json:
+                save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
+            callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
 
-    #     # Plot images
-    #     if plots and batch_i < 3:
-    #         plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names)  # labels
-    #         plot_images(im, output_to_target(preds), paths, save_dir / f'val_batch{batch_i}_pred.jpg', names)  # pred
+        # Plot images
+        if plots and batch_i < 3:
+            plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names)  # labels
+            plot_images(im, output_to_target(preds), paths, save_dir / f'val_batch{batch_i}_pred.jpg', names)  # pred
 
-    #     callbacks.run('on_val_batch_end', batch_i, im, targets, paths, shapes, preds)
+        callbacks.run('on_val_batch_end', batch_i, im, targets, paths, shapes, preds)
 
     # Compute metrics
-    # stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
-    # if len(stats) and stats[0].any():
-    #     tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
-    #     ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
-    #     mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
-    # nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
+    stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
+    if len(stats) and stats[0].any():
+        tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
+        ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
+        mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+    nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
 
-    # # Print results
-    # pf = '%22s' + '%11i' * 2 + '%11.3g' * 4  # print format
-    # LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
-    # if nt.sum() == 0:
-    #     LOGGER.warning(f'WARNING ⚠️ no labels found in {task} set, can not compute metrics without labels')
+    # Print results
+    pf = '%22s' + '%11i' * 2 + '%11.3g' * 4  # print format
+    LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+    if nt.sum() == 0:
+        LOGGER.warning(f'WARNING ⚠️ no labels found in {task} set, can not compute metrics without labels')
 
-    # # Print results per class
-    # if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
-    #     for i, c in enumerate(ap_class):
-    #         LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+    # Print results per class
+    if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
+        for i, c in enumerate(ap_class):
+            LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
-    # # Print speeds
-    # t = tuple(x.t / seen * 1E3 for x in dt)  # speeds per image
-    # if not training:
-    #     shape = (batch_size, 3, imgsz, imgsz)
-    #     LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {shape}' % t)
+    # Print speeds
+    t = tuple(x.t / seen * 1E3 for x in dt)  # speeds per image
+    if not training:
+        shape = (batch_size, 3, imgsz, imgsz)
+        LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {shape}' % t)
 
-    # # Plots
-    # if plots:
-    #     confusion_matrix.plot(save_dir=save_dir, names=list(names.values()))
-    #     callbacks.run('on_val_end', nt, tp, fp, p, r, f1, ap, ap50, ap_class, confusion_matrix)
+    # Plots
+    if plots:
+        confusion_matrix.plot(save_dir=save_dir, names=list(names.values()))
+        callbacks.run('on_val_end', nt, tp, fp, p, r, f1, ap, ap50, ap_class, confusion_matrix)
 
     # Save JSON
     if DFjdict != None:
@@ -413,6 +412,8 @@ def run(
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
+    # results, maps, _ 
+    # what I need from results: [P, R, mAP@.5, mAP@.5-.95]
 
 
 def parse_opt():
